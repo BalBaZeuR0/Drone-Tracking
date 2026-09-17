@@ -7,10 +7,10 @@ def _run_episode(policy) -> float:
     env = CameraSwitchEnv(FakeCameraSignalProvider())
     _, info = env.reset()
     total_reward = 0.0
-    terminated = False
-    while not terminated:
+    truncated = False
+    while not truncated:
         action = policy.select_action(info)
-        _, reward, terminated, _, info = env.step(action)
+        _, reward, _, truncated, info = env.step(action)
         total_reward += reward
     return total_reward
 

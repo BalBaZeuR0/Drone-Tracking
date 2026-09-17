@@ -13,6 +13,17 @@ class MaskResult:
 
 
 class BackgroundSubtractor:
+    """Static-reference background subtraction.
+
+    The first frame passed to `update()` after construction/`reset()` is
+    assumed drone-free and is captured once as a permanent background
+    reference — there is no further adaptation (no running average, no
+    periodic refresh). Consequently that first call always reports
+    `visible=False` (no diff yet to detect against), so in
+    `CameraSwitchEnv` the very first scored step is a structural -1 that no
+    policy, however well-chosen, can avoid.
+    """
+
     def __init__(self, crop_size: int = 64, diff_threshold: int = 25, min_blob_area: int = 5):
         self.crop_size = crop_size
         self.diff_threshold = diff_threshold

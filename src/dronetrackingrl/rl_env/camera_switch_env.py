@@ -34,6 +34,19 @@ class CameraSwitchEnv(gym.Env):
         return self._signals_to_obs(signals), self._signals_to_info(signals)
 
     def step(self, action: int):
+        """Scores `action` against the frame already observed, then advances.
+
+        Reward is computed against `self._current_signals` — the signals set by
+        the prior `reset()`/`step()` call — BEFORE the provider is advanced. The
+        `obs`/`info` this call returns describe the NEXT frame, not the one just
+        scored; a caller reading `info["pixel"][action]` immediately after this
+        call is reading the upcoming frame's pixel, not the one that earned
+        `reward`.
+
+        There is no genuine terminal state in this env: a provider running out
+        of frames is a time-limit condition, not a state the agent "loses" from.
+        That's why `done` maps to `truncated` and `terminated` is always False.
+        """
         reward = 1.0 if self._current_signals[action].visible else -1.0
         if self._last_action is not None and action != self._last_action:
             reward -= self.switch_penalty
@@ -43,7 +56,7 @@ class CameraSwitchEnv(gym.Env):
         self._current_signals = signals
         obs = self._signals_to_obs(signals)
         info = self._signals_to_info(signals)
-        return obs, reward, done, False, info
+        return obs, reward, False, done, info
 
     def _signals_to_obs(self, signals):
         return np.concatenate([signal.latent for signal in signals]).astype(np.float32)

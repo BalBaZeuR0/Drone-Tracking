@@ -23,4 +23,5 @@ def test_step_applies_switch_penalty_on_camera_change():
     env.step(0)
     obs, reward, terminated, truncated, info = env.step(1)
     assert reward == 0.5  # base reward 1.0 (camera 1 visible) minus switch penalty 0.5
-    assert terminated is True
+    assert terminated is False  # no genuine terminal state in this env
+    assert truncated is True  # running out of frames is time-limit truncation
