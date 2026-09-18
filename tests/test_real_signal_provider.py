@@ -51,3 +51,35 @@ def test_step_advances_through_consecutive_real_frames_and_signals_done():
     signals_3, done_3 = provider.step()
     assert signals_3[0].visible is True  # gerçek kare 3, görünür
     assert done_3 is True
+
+
+def test_signals_for_ref_frame_reports_not_visible_when_camera_not_recording():
+    # cam3, cam0'ın 33875. karesine geldiğinde artık kayıt yapmıyor (el ile
+    # doğrulandı: tests/test_real_sync.py::test_cam3_stops_recording_near_end_of_cam0_timeline).
+    # Bu, is_recording()'in False döndüğü "not recording" dalını -- frame_reader
+    # hiç çağrılmadan visible=False/pixel=None/sıfır-crop üretilen dalı -- gerçek
+    # bir görüntü fixture'ı gerektirmeden test eder.
+    def _frame_reader_should_not_be_called(frames_root, camera, frame_id):
+        raise AssertionError(
+            "frame_reader should not be called when the camera is not recording"
+        )
+
+    detections = {0: parse_detections_file(CAM0_DETECTIONS_PATH)}
+    encoder = MaskedCropAutoencoder(crop_size=64, latent_dim=LATENT_DIM)
+    provider = RealCameraSignalProvider(
+        frames_root=FRAMES_ROOT,
+        detections=detections,
+        cameras=[3],
+        encoder=encoder,
+        latent_dim=LATENT_DIM,
+        start_ref_frame=33875,
+        end_ref_frame=33876,
+        reference_camera=0,
+        frame_reader=_frame_reader_should_not_be_called,
+    )
+
+    signals = provider.signals_for_ref_frame(33875)
+
+    assert signals[0].visible is False
+    assert signals[0].pixel is None
+    assert signals[0].latent.shape == (LATENT_DIM,)
