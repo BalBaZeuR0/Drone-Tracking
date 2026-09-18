@@ -6,7 +6,7 @@ import torch
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 
-from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder, train_autoencoder
+from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.masking.background_subtraction import BackgroundSubtractor
 from dronetrackingrl.real_data.detections import parse_detections_file
 from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider, default_frame_reader
@@ -31,10 +31,13 @@ def collect_crops(
     reference_camera: int = 0,
     crop_size: int = 64,
 ) -> List[np.ndarray]:
-    """Encoder ön-eğitimi için kameraların kayıtta olduğu her karede
-    maskelenmiş kırpım toplar (RealCameraSignalProvider'dan bağımsız,
-    kendi BackgroundSubtractor'larıyla — encode edilmemiş ham kırpımlara
-    ihtiyaç var)."""
+    """Encoder ön-eğitimi için kameraların kayıtta olduğu ve drone'un
+    gerçekten tespit edildiği karelerde maskelenmiş kırpım toplar
+    (RealCameraSignalProvider'dan bağımsız, kendi BackgroundSubtractor'larıyla
+    — encode edilmemiş ham kırpımlara ihtiyaç var). Tespit edilmeyen (boş)
+    kareler bilerek atlanıyor: dataset3'ün gerçek görünürlük oranları
+    (%42-94) göz önüne alındığında, bunları dahil etmek eğitim setinin
+    büyük bir kısmını tekdüze sıfır kırpımla doldurup encoder'ı bozardı."""
     crops: List[np.ndarray] = []
     subtractors = {camera: BackgroundSubtractor(crop_size=crop_size) for camera in cameras}
     for ref_frame in range(start_ref_frame, end_ref_frame + 1):
@@ -46,8 +49,41 @@ def collect_crops(
             if frame is None:
                 continue
             result = subtractors[camera].update(frame)
-            crops.append(result.mask_crop)
+            if result.visible:
+                crops.append(result.mask_crop)
     return crops
+
+
+def _train_encoder_in_batches(
+    encoder: MaskedCropAutoencoder,
+    crops: List[np.ndarray],
+    epochs: int = 20,
+    batch_size: int = 256,
+    lr: float = 1e-3,
+    seed: int = 0,
+) -> None:
+    """train_autoencoder (Faz 1, encoder/autoencoder.py) her epoch'ta tüm
+    kırpımları tek seferde (full-batch) işliyor -- dataset3 ölçeğinde
+    (yüz binlerce kırpım olabilir) bu bellek taşırır. Faz 1'in paylaşılan
+    modülüne dokunmadan, burada mini-batch'li bir eğitim döngüsü
+    kullanıyoruz."""
+    if not crops:
+        return
+    crops_array = np.stack(crops)
+    optimizer = torch.optim.Adam(encoder.parameters(), lr=lr)
+    loss_fn = torch.nn.MSELoss()
+    rng = np.random.default_rng(seed)
+    num_samples = len(crops_array)
+    for _ in range(epochs):
+        indices = rng.permutation(num_samples)
+        for start in range(0, num_samples, batch_size):
+            batch_indices = indices[start : start + batch_size]
+            batch = torch.tensor(crops_array[batch_indices], dtype=torch.float32).unsqueeze(1)
+            optimizer.zero_grad()
+            reconstruction = encoder(batch)
+            loss = loss_fn(reconstruction, batch)
+            loss.backward()
+            optimizer.step()
 
 
 def train_and_evaluate(
@@ -60,15 +96,14 @@ def train_and_evaluate(
     crop_size: int = 64,
     latent_dim: int = 16,
     total_timesteps: int = 2000,
+    encoder_batch_size: int = 256,
     seed: int = 0,
 ) -> float:
     detections = load_detections(detections_dir, cameras)
     encoder = MaskedCropAutoencoder(crop_size=crop_size, latent_dim=latent_dim)
 
     crops = collect_crops(frames_root, cameras, start_ref_frame, end_ref_frame, reference_camera, crop_size)
-    if crops:
-        crops_tensor = torch.tensor(np.stack(crops), dtype=torch.float32).unsqueeze(1)
-        train_autoencoder(encoder, crops_tensor, epochs=20)
+    _train_encoder_in_batches(encoder, crops, epochs=20, batch_size=encoder_batch_size, seed=seed)
 
     def make_env():
         provider = RealCameraSignalProvider(
