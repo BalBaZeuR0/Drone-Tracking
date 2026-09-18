@@ -1,7 +1,18 @@
 # Çoklu Kamera RL ile Drone Takibi — Tasarım Spec'i
 
-Tarih: 2026-09-16
-Durum: Onaylandı (brainstorming aşaması tamamlandı)
+Tarih: 2026-09-16 (ilk yazım) — 2026-09-18 güncelleme: veri seti indirmesi
+tamamlandı, gerçek veri yapısı incelendi. "Genel Veri Akışı", "Bileşen 3"
+ve "Baseline'lar ve Değerlendirme" bölümleri gerçek veriye göre revize
+edildi (bkz. § Gerçek Veri Entegrasyonu). Eski "Açık Noktalar" bölümü
+kaldırıldı, yerini gerçek bulgular aldı.
+
+Durum: Onaylandı (brainstorming aşaması tamamlandı). Faz 1'in
+veri-setinden-bağımsız çekirdek bileşenleri (aşağıdaki Bileşen 1-3'ün ilk
+sürümü) zaten uygulandı ve `master`'a merge edildi — bkz.
+`docs/superpowers/plans/2026-09-16-core-rl-components.md`. Bu güncelleme,
+aynı Faz 1 kapsamında, gerçek veriyle çalışacak ikinci uygulama turunun
+(Faz 1b) tasarımını ekliyor; Faz 1'in kendisini değiştirmiyor, üzerine inşa
+ediyor.
 
 ## Amaç ve Kapsam
 
@@ -20,28 +31,64 @@ edildi.
 ## Veri Seti
 
 Kaynak: [CenekAlbl/drone-tracking-datasets](https://github.com/CenekAlbl/drone-tracking-datasets)
-(indirme tamamlandığında burada netleştirilecek: sekans sayısı, her sekansta
-kaç kamera, kare sayısı/fps, dosya adlandırma kuralı).
+(ETH Zürich). İndirildi: `C:\Users\BalBa\OneDrive\Desktop\DatasetDroneTracker\drone-tracking-datasets\`.
 
-Bilinen içerik:
-- Her kamera için model/kalibrasyon bilgisi (intrinsic/extrinsic — "model").
-- Drone'un dünya koordinatındaki (X, Y, Z) ground-truth yörüngesi.
-- Videodan kareye bölünmüş, **etiketlenmemiş** ham görüntüler (her kamera için).
+5 ayrı sahne (`dataset1`..`dataset5`), her biri kendi klasöründe:
+
+| Dataset | Kamera | Süre | 3D yörünge | Senkronizasyon | Kamera konumu | 2D etiket |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | 4 | ~2 dk | Var | Yok | Yok | Var |
+| 2 | 4 | ~2.5 dk | Var | Yok | Yok | Var |
+| 3 | 6 | ~9 dk | Var | Var | Var | Var |
+| 4 | 7 | ~7 dk | Var | Var | Yok | Var |
+| 5 | 6, 3 drone | ~10 dk | Var | Var | Var | Yok |
+
+Her dataset klasöründe:
+- `camN/camN.zip` (+ bazılarında çok parçalı `camN.z01`, `camN.z02`, ...) —
+  o kameranın ham videosu (mp4). **Kareye bölünmemiş**, sıkıştırılmış video
+  olarak duruyor; kare çıkarma (frame extraction) bizim yapmamız gerekiyor
+  (OpenCV `cv2.VideoCapture`, sistemde ffmpeg binary'si yok).
+- `cameras.txt` — kamera id → model eşlemesi (örn. `cam0 - iphone6`).
+  Model adı `calibration/<model>/<model>.json` dosyasına işaret eder
+  (K-matrix, distCoeff, fps, çözünürlük — intrinsic kalibrasyon, tüm
+  dataset'ler arasında paylaşılan, cihaz modeline göre).
+- `detections/camN.txt` — **elle etiketlenmiş, hazır 2D ground truth**.
+  Format: `frame_id x y` (1 satır = 1 kare), **sadece drone'un o kamerada
+  görünür/ayırt edilebilir olduğu kareler** için satır var. Yani "kadrajda
+  mı" + piksel konumu zaten hazır; XYZ+kalibrasyon projeksiyonuna gerek yok.
+- `trajectory/rtk.txt` — drone'un 3D (X,Y,Z) ground-truth yörüngesi (RTK ile
+  ölçülmüş), satır sırası kendi örnekleme hızında (kameralarla otomatik
+  hizalı değil).
+- (sadece dataset3, dataset5) `camera-locations/campos.txt` — her kameranın
+  gerçek 3D (X,Y,Z) konumu, sıra `cameras.txt` ile aynı.
+- (sadece dataset3, dataset4, dataset5) dataset'in kendi `README.md`'sinde
+  kameralar arası **gerçek zaman senkronizasyon parametreleri** (alpha/beta,
+  bkz. § Gerçek Veri Entegrasyonu).
+
+**Önemli bulgu:** incelenen dataset'lerde (1 ve 3) her kameranın kendi
+klibinde drone **%100 kare boyunca görünür** — occlusion/kaybetme senaryosu
+videoların içinde yok (klipler zaten sadece drone görünürken
+kaydedilmiş/kırpılmış). Kamera-değiştirme sinyali occlusion'dan değil,
+kameraların **farklı zamanlarda başlayıp bitmesinden** geliyor — bkz.
+§ Gerçek Veri Entegrasyonu.
 
 ## Genel Veri Akışı
 
-İki ayrı, birbirine karıştırılmayan kullanım:
+İki ayrı, birbirine karıştırılmayan kullanım (senteik-veri Faz 1'de olduğu
+gibi):
 
 1. **Maskeleme → RL'nin gerçekte gördüğü sinyal.** Kameralar sabit olduğu
    için arka plan çıkarma (background subtraction / frame differencing) ile
-   drone arka plandan ayrılır; tamamen görüntü tabanlı, kör çalışır (XYZ
-   ground-truth'a bakmaz).
-2. **XYZ + kalibrasyon → sadece otomatik doğrulama/ground-truth referansı.**
-   XYZ, her kameranın izdüşüm matrisiyle 2D'ye projekte edilerek "gerçekte
-   drone bu pikselde olmalıydı" referansı otomatik üretilir — elle etiketleme
-   yok. Bu referans (a) maskeleme modülünün doğruluğunu ölçmek, (b) RL
-   ödülünü hesaplamak, (c) nihai trajectory'nin doğruluğunu değerlendirmek
-   için kullanılır.
+   drone arka plandan ayrılır; tamamen görüntü tabanlı, kör çalışır (ground
+   truth'a bakmaz).
+2. **Ground truth → sadece otomatik doğrulama/reward referansı.** Sentetik
+   Faz 1'de bu XYZ+kalibrasyon projeksiyonundan geliyordu. **Gerçek veride
+   yerini `detections/camN.txt`'teki hazır elle-etiketlenmiş 2D konumlar
+   alıyor** — ayrıca projeksiyona gerek yok, çünkü etiket zaten piksel
+   cinsinden var. XYZ+kalibrasyon projeksiyon modülü (Bileşen 0, aşağıda)
+   kapsamdan çıkmadı; sadece rolü değişti — artık asıl ground-truth kaynağı
+   değil, (a) ileride Faz 2 (3D) için, (b) `camera-locations` verisi olan
+   dataset'lerde (3, 5) mesafe hesabı için kullanılıyor.
 
 ## Bileşen 1: Maskeleme (Algı) Modülü
 
@@ -78,11 +125,17 @@ Bilinen içerik:
   sinyali gözleme dahil edilmez — latent onun yerine geçer.
 - **Aksiyon (action)**: `Discrete(N)` — o kare için hangi kameraya
   geçileceği.
-- **Ödül (reward)**: seçilen kameranın XYZ+kalibrasyondan projekte edilen
-  ground-truth görünürlüğü (`görünür_mü`) — kadrajdaysa pozitif, değilse
-  negatif/0. (Reward kriteri olarak sadece "kadrajda olma/görüntülenebilirlik"
-  seçildi; merkeze yakınlık, boyut, geçiş cezası gibi ek kriterler bu
-  aşamada dahil edilmedi.)
+- **Ödül (reward) — Faz 1 (sentetik, uygulandı)**: seçilen kameranın
+  ground-truth görünürlüğü (`görünür_mü`) — kadrajdaysa +1, değilse -1.
+  Sadece "kadrajda olma" kriteri; bu basit tasarım sentetik doğrulama için
+  bilerek korundu ve değiştirilmedi (bkz. `CameraSwitchEnv` implementasyonu).
+- **Ödül (reward) — Faz 1b (gerçek veri, bu güncellemede tasarlandı)**:
+  gerçek veride her kameranın kendi klibinde drone sürekli görünür olduğu
+  için (bkz. § Veri Seti bulgusu), salt ikili "görünür mü" sinyali neredeyse
+  sabit kalır ve öğrenilecek bir şey bırakmaz. Bunun yerine **sürekli bir
+  kalite skoru** kullanılıyor — bkz. § Gerçek Veri Entegrasyonu için tam
+  formül. Kamera o an senkronize zaman diliminde kayıtta değilse kalite=0
+  (görünmüyor sayılır).
 - **Algoritma**: PPO (discrete aksiyon uzayına doğrudan uygun,
   Stable-Baselines3 üzerinden).
 - Farklı sekanslarda kamera sayısı (N) farklıysa, her N konfigürasyonu ayrı
@@ -97,17 +150,18 @@ Kamera seçim kaydı (hangi karede hangi kamera seçildi) ayrıca loglanır.
 ## Baseline'lar ve Değerlendirme
 
 Karşılaştırma seti:
-- **Oracle**: her karede ground-truth projeksiyonuna göre gerçekten en iyi
-  (kadrajda) kamerayı seçen üst sınır.
+- **Oracle**: her karede gerçekten en yüksek kalite skoruna (Faz 1: kadrajda
+  olma; Faz 1b: yakınlık+merkezleme) sahip kamerayı seçen üst sınır.
 - **Sabit tek kamera**: sekans başına en iyi ortalama performans veren tek
   kamerada kalmak.
 - **Rastgele/round-robin geçiş**: alt sınır.
 - **PPO ajanı**: önerilen yöntem.
 
 Metrikler:
-- Kare başına "drone kadrajda mı" oranı (RL vs oracle vs baseline'lar).
+- Faz 1: kare başına "drone kadrajda mı" oranı. Faz 1b: kare başına
+  ortalama kalite skoru (RL vs oracle vs baseline'lar).
 - Piksel trajectory hatası: RL'nin çıkardığı 2D yörünge vs ground-truth
-  projeksiyonu.
+  (Faz 1: XYZ projeksiyonu; Faz 1b: `detections/camN.txt`).
 - Gereksiz kamera geçiş sayısı (flickering göstergesi, ödüle dahil değil
   ama raporlanacak).
 
@@ -137,10 +191,91 @@ fazla kamera görüşünü kalibrasyon verisiyle triangüle ederek 3D trajectory
 rekonstrüksiyonuna geçilecek. Bu spec'in kapsamı dışında; ayrı bir
 brainstorming/spec döngüsü ile ele alınacak.
 
-## Açık Noktalar (veri seti indirmesi tamamlanınca netleşecek)
+## Gerçek Veri Entegrasyonu (Faz 1b) — 2026-09-18 eklendi
 
-- Sekans sayısı, sekans başına kamera sayısı (N), kare sayısı/fps.
-- Kalibrasyon dosyalarının tam formatı (intrinsic/extrinsic parametreleri
-  nasıl saklanmış).
-- XYZ ground-truth dosyasının zaman senkronizasyonu (kameralarla aynı kare
-  indeksine mi hizalı, yoksa ayrı bir zaman damgası mı var).
+Faz 1'in çekirdek bileşenleri (Bileşen 1-3, önceki sürüm) sentetik veriyle
+inşa edildi ve doğrulandı. Bu bölüm, aynı bileşenleri gerçek
+`drone-tracking-datasets` verisine bağlayan ikinci uygulama turunun
+tasarımıdır — ayrı bir plan dosyasında (`docs/superpowers/plans/`,
+tarih 2026-09-18) TDD task'larına dökülecek.
+
+### Dataset seçimi
+
+- **dataset1**: sadece boru hattı (pipeline) doğrulaması için — kareler
+  zaten çıkarıldı (4 kamera, 22.371 kare, 4.4GB). Kamera-değiştirme sinyali
+  yok (her kamerada %100 görünür), bu yüzden **asıl eğitim için kullanılmaz**.
+- **dataset3**: asıl eğitim/değerlendirme hedefi. Senkronizasyon
+  parametreleri + gerçek kamera konumları (campos.txt) olan, kamera sayısı
+  ve süre açısından da orta zorlukta tek dataset. Kareler çıkarılıyor
+  (6 kamera, ~132.000 kare, tahmini ~25GB).
+- dataset2/4/5 bu turun kapsamı dışında; ileride aynı adaptörlerle
+  eklenebilir (dataset4 senkronizasyon var ama kamera konumu yok — sadece
+  merkezleme bileşeniyle çalışır; dataset5 çoklu drone + 2D etiket yok, ayrı
+  bir tasarım gerektirir).
+
+### Senkronize zaman ekseni
+
+Kameralar farklı zamanlarda başlayıp bitiyor (farklı kare sayıları: dataset3
+için 14196'dan 33875'e kadar) ve farklı, bazen değişken fps'lerde kayıt
+yapıyor. dataset3'ün README'si her kamera çifti için gerçek ölçülmüş
+zaman-eşleme parametreleri (`alpha`, `beta`) veriyor:
+
+```
+frame_j = alpha(i→j) * frame_i + beta(i→j)
+```
+
+Referans kamera olarak **cam0** seçildi (en yüksek fps=59.94, en uzun kayıt).
+Her kamera N için, cam0'ın frame_id ekseni boyunca karşılık gelen `frame_j`
+hesaplanır; bu değer o kameranın `detections/camN.txt`'indeki geçerli
+aralığın (0..max_frame_id) **dışına düşerse**, o kamera o an "kayıt dışı" =
+görünmüyor sayılır. Gerçek sayılarla doğrulandı: dataset3'te cam3 ve cam5,
+cam0'ın kaydının son ~%1-1.4'ünde bu şekilde devre dışı kalıyor — RL'nin
+öğreneceği kamera-değiştirme sinyali tam olarak burada.
+
+### Kalite skoru (yeni reward tanımı)
+
+```
+kalite = 0.5 * yakınlık_norm + 0.5 * merkezleme_norm
+```
+
+- **yakınlık_norm**: kamera-drone 3D Euclidean mesafesi
+  (`camera-locations/campos.txt` + `trajectory/rtk.txt`), **kamera başına**
+  min-max normalize edilir (o kameranın gördüğü en yakın an = 1, en uzak
+  an = 0) — mutlak mesafeler kameralar arasında karşılaştırılabilir değil
+  çünkü her kamera farklı bir konumda duruyor.
+- **merkezleme_norm**: `detections/camN.txt`'teki (x,y) konumunun görüntü
+  merkezine piksel uzaklığı, o kameranın çözünürlüğünün (kalibrasyon
+  json'undan) yarı-köşegenine göre normalize edilir (merkez = 1, kenar/dışı
+  ≈ 0, clamp edilir).
+- Kamera senkronize zaman diliminde kayıt dışıysa: kalite = 0.
+- Ağırlıklar (0.5/0.5) onaylandı; ileride ampirik olarak ayarlanabilir.
+
+### Gerekli yeni parser'lar / bileşenler (Faz 1b'nin kapsamı)
+
+- `cameras.txt` parser → kamera id → model adı.
+- Kalibrasyon `<model>.json` parser → K-matrix, çözünürlük (merkezleme
+  normalizasyonu için).
+- `detections/camN.txt` parser → sparse `{frame_id: (x, y)}` haritası.
+- `campos.txt` + `rtk.txt` parser → kamera 3D konumları + drone 3D
+  yörüngesi.
+- Senkronize zaman ekseni oluşturucu (alpha/beta tablosu → her cam0 karesi
+  için diğer kameraların karşılık gelen frame_id'si + kayıtta-mı durumu).
+- Kalite skoru hesaplayıcı (yukarıdaki formül).
+- `RealCameraSignalProvider` — Faz 1'in `CameraSignalProvider` protokolünü
+  gerçek karelerle (disk'ten okunan `.jpg`) + gerçek kalite skoruyla
+  dolduran implementasyon; mevcut `BackgroundSubtractor` ve paylaşılan
+  `MaskedCropAutoencoder`'ı olduğu gibi kullanır (bu ikisi Faz 1'de zaten
+  yazıldı, değişmiyor).
+- Çok parçalı zip'lerden video çıkarma script'i zaten yazıldı ve doğrulandı:
+  `DatasetDroneTracker/drone-tracking-datasets/_tools/extract_multipart_zip.py`.
+
+### Açık noktalar (bu turun kapsamı dışında, ileride)
+
+- Mate 7 gibi bazı telefonların değişken fps kaydettiği README'de not
+  düşülmüş (ffprobe ile per-frame timestamp çıkarma öneriliyor) — dataset3
+  için alpha/beta tablosu bu sorunu zaten 30fps'e remap ederek çözmüş
+  durumda, bu yüzden bu turda ekstra işlem gerekmiyor; dataset4/5'e
+  geçildiğinde tekrar değerlendirilmeli.
+- Distorsiyon katsayıları (`distCoeff`) şu an kullanılmıyor (K-matrix ile
+  düz pinhole varsayılıyor) — merkezleme skorunun hassasiyetini önemli
+  ölçüde etkiliyorsa ileride eklenebilir.
