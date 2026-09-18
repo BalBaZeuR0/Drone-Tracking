@@ -1,5 +1,8 @@
 from pathlib import Path
 
+import numpy as np
+import pytest
+
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.real_data.detections import parse_detections_file
 from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider
@@ -83,3 +86,67 @@ def test_signals_for_ref_frame_reports_not_visible_when_camera_not_recording():
     assert signals[0].visible is False
     assert signals[0].pixel is None
     assert signals[0].latent.shape == (LATENT_DIM,)
+
+
+def test_signals_for_ref_frame_reports_not_visible_when_frame_read_returns_none(caplog):
+    # Simulates a missing/corrupt JPEG on disk: frame_reader (e.g.
+    # default_frame_reader backed by cv2.imread) returns None instead of
+    # raising. The provider must degrade to the same visible=False/pixel=None
+    # /zero-crop path used for the not-recording case, not crash trying to
+    # call BackgroundSubtractor.update(None), and it must log a warning that
+    # names the camera and frame id (spec: "skip + log, never silently
+    # swallow").
+    def _frame_reader_returns_none(frames_root, camera, frame_id):
+        return None
+
+    detections = {0: parse_detections_file(CAM0_DETECTIONS_PATH)}
+    encoder = MaskedCropAutoencoder(crop_size=64, latent_dim=LATENT_DIM)
+    provider = RealCameraSignalProvider(
+        frames_root=FRAMES_ROOT,
+        detections=detections,
+        cameras=[0],
+        encoder=encoder,
+        latent_dim=LATENT_DIM,
+        start_ref_frame=50,
+        end_ref_frame=51,
+        reference_camera=0,
+        frame_reader=_frame_reader_returns_none,
+    )
+
+    with caplog.at_level("WARNING"):
+        signals = provider.signals_for_ref_frame(50)
+
+    assert signals[0].visible is False
+    assert signals[0].pixel is None
+    assert signals[0].latent.shape == (LATENT_DIM,)
+    assert any(
+        "0" in record.getMessage() and "50" in record.getMessage()
+        for record in caplog.records
+    ), "warning should name the camera and frame id"
+
+
+def test_signals_for_ref_frame_raises_keyerror_when_camera_missing_from_detections():
+    # cam3 is recording at ref_frame 0 (see
+    # tests/test_real_sync.py::test_cam3_is_recording_near_start_of_cam0_timeline)
+    # but is entirely absent from `detections` here -- a caller wiring
+    # mistake. This must raise KeyError immediately rather than silently
+    # reporting visible=False for every frame of the episode.
+    def _frame_reader_returns_dummy_frame(frames_root, camera, frame_id):
+        return np.zeros((64, 64), dtype=np.uint8)
+
+    detections = {0: parse_detections_file(CAM0_DETECTIONS_PATH)}  # camera 3 missing
+    encoder = MaskedCropAutoencoder(crop_size=64, latent_dim=LATENT_DIM)
+    provider = RealCameraSignalProvider(
+        frames_root=FRAMES_ROOT,
+        detections=detections,
+        cameras=[3],
+        encoder=encoder,
+        latent_dim=LATENT_DIM,
+        start_ref_frame=0,
+        end_ref_frame=1,
+        reference_camera=0,
+        frame_reader=_frame_reader_returns_dummy_frame,
+    )
+
+    with pytest.raises(KeyError):
+        provider.signals_for_ref_frame(0)

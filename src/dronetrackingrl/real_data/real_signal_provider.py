@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
 
@@ -9,6 +10,8 @@ from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.masking.background_subtraction import BackgroundSubtractor
 from dronetrackingrl.real_data.sync import is_recording, mapped_frame
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
+
+logger = logging.getLogger(__name__)
 
 
 def default_frame_reader(frames_root: Path, camera: int, frame_id: int) -> Optional[np.ndarray]:
@@ -76,10 +79,25 @@ class RealCameraSignalProvider:
             recording = is_recording(ref_frame, camera, self.reference_camera)
             subtractor = self._subtractors[camera]
 
+            frame = None
             if recording:
                 frame = self.frame_reader(self.frames_root, camera, camera_frame_id)
+                if frame is None:
+                    logger.warning(
+                        "Missing/unreadable frame for camera %d, frame_id %d "
+                        "(ref_frame %d) -- treating as not visible for this step.",
+                        camera, camera_frame_id, ref_frame,
+                    )
+
+            if recording and frame is not None:
                 mask_result = subtractor.update(frame)
-                ground_truth = self.detections.get(camera, {}).get(camera_frame_id)
+                # `self.detections[camera]` (not `.get(camera, {})`): a camera
+                # entirely missing from `detections` is a caller wiring
+                # mistake and must raise loudly, not silently degrade to
+                # permanently invisible. A missing `camera_frame_id` *within*
+                # a present camera's dict is the normal "no detection for
+                # this exact frame" case and still resolves to None.
+                ground_truth = self.detections[camera].get(camera_frame_id)
                 visible = ground_truth is not None
                 pixel = mask_result.centroid
                 crop = mask_result.mask_crop
