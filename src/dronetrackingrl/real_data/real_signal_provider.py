@@ -1,0 +1,96 @@
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
+
+import cv2
+import numpy as np
+import torch
+
+from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
+from dronetrackingrl.masking.background_subtraction import BackgroundSubtractor
+from dronetrackingrl.real_data.sync import is_recording, mapped_frame
+from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
+
+
+def default_frame_reader(frames_root: Path, camera: int, frame_id: int) -> Optional[np.ndarray]:
+    path = Path(frames_root) / f"cam{camera}" / f"{frame_id:06d}.jpg"
+    return cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+
+
+class RealCameraSignalProvider:
+    """Gerçek çıkarılmış karelerden ve detections/camN.txt ground-truth'undan
+    beslenen CameraSignalProvider implementasyonu.
+
+    `visible` (reward için) SADECE ground-truth detections'tan ve senkronize
+    kayıt durumundan gelir -- maskeleme modülü asla reward'a karışmaz, sadece
+    latent gözlemi üretir (spec'in "iki ayrı kullanım" ayrımı).
+
+    Ön koşul: `start_ref_frame`, çağıranın detections[reference_camera]'da
+    drone'un görünmediğini (None) doğruladığı bir referans-kamera karesi
+    olmalı -- BackgroundSubtractor'ın ilk update() çağrısı drone-free bir
+    kare varsayıyor.
+    """
+
+    def __init__(
+        self,
+        frames_root: Path,
+        detections: Dict[int, Dict[int, Optional[Tuple[float, float]]]],
+        cameras: List[int],
+        encoder: MaskedCropAutoencoder,
+        latent_dim: int,
+        start_ref_frame: int,
+        end_ref_frame: int,
+        reference_camera: int = 0,
+        crop_size: int = 64,
+        frame_reader: Callable[[Path, int, int], Optional[np.ndarray]] = default_frame_reader,
+    ):
+        self.frames_root = frames_root
+        self.detections = detections
+        self.cameras = cameras
+        self.encoder = encoder
+        self.latent_dim = latent_dim
+        self.num_cameras = len(cameras)
+        self.start_ref_frame = start_ref_frame
+        self.end_ref_frame = end_ref_frame
+        self.reference_camera = reference_camera
+        self.crop_size = crop_size
+        self.frame_reader = frame_reader
+        self._subtractors = {camera: BackgroundSubtractor(crop_size=crop_size) for camera in cameras}
+        self._ref_frame = start_ref_frame
+
+    def reset(self) -> List[CameraStepSignal]:
+        for subtractor in self._subtractors.values():
+            subtractor.reset()
+        self._ref_frame = self.start_ref_frame
+        return self.signals_for_ref_frame(self._ref_frame)
+
+    def step(self) -> Tuple[List[CameraStepSignal], bool]:
+        self._ref_frame += 1
+        signals = self.signals_for_ref_frame(self._ref_frame)
+        done = self._ref_frame >= self.end_ref_frame
+        return signals, done
+
+    def signals_for_ref_frame(self, ref_frame: int) -> List[CameraStepSignal]:
+        signals = []
+        for camera in self.cameras:
+            camera_frame_id = round(mapped_frame(ref_frame, self.reference_camera, camera))
+            recording = is_recording(ref_frame, camera, self.reference_camera)
+            subtractor = self._subtractors[camera]
+
+            if recording:
+                frame = self.frame_reader(self.frames_root, camera, camera_frame_id)
+                mask_result = subtractor.update(frame)
+                ground_truth = self.detections.get(camera, {}).get(camera_frame_id)
+                visible = ground_truth is not None
+                pixel = mask_result.centroid
+                crop = mask_result.mask_crop
+            else:
+                visible = False
+                pixel = None
+                crop = np.zeros((self.crop_size, self.crop_size), dtype=np.float32)
+
+            crop_tensor = torch.tensor(crop, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
+            with torch.no_grad():
+                latent = self.encoder.encode(crop_tensor).squeeze(0).numpy()
+
+            signals.append(CameraStepSignal(latent=latent, visible=visible, pixel=pixel))
+        return signals
