@@ -57,10 +57,16 @@ Her dataset klasöründe:
   görünür/ayırt edilebilir olduğu kareler** için satır var. Yani "kadrajda
   mı" + piksel konumu zaten hazır; XYZ+kalibrasyon projeksiyonuna gerek yok.
 - `trajectory/rtk.txt` — drone'un 3D (X,Y,Z) ground-truth yörüngesi (RTK ile
-  ölçülmüş), satır sırası kendi örnekleme hızında (kameralarla otomatik
-  hizalı değil).
+  ölçülmüş), satır sırası kendi örnekleme hızında. **Kameralarla senkronize
+  değil ve senkronizasyon kuralı hiçbir yerde belgelenmemiş** (dataset3
+  rtk.txt 3306 satır, dataset1 rtk.txt 3291 satır — tamamen farklı uçuş
+  sürelerine rağmen neredeyse aynı satır sayısı, satır↔kare eşlemesi yok).
+  Bu yüzden Faz 1b'de kullanılmıyor — bkz. § Gerçek Veri Entegrasyonu.
 - (sadece dataset3, dataset5) `camera-locations/campos.txt` — her kameranın
-  gerçek 3D (X,Y,Z) konumu, sıra `cameras.txt` ile aynı.
+  gerçek 3D (X,Y,Z) **konumu** (rotation/yönelim verilmiyor). Tek başına
+  tam projeksiyon/triangülasyon için yetersiz (kamera yönelimi olmadan);
+  Faz 1b'de kullanılmıyor, Faz 2 (3D) için ileride kamera pozu tahmini
+  (structure-from-motion) gerektirecek.
 - (sadece dataset3, dataset4, dataset5) dataset'in kendi `README.md`'sinde
   kameralar arası **gerçek zaman senkronizasyon parametreleri** (alpha/beta,
   bkz. § Gerçek Veri Entegrasyonu).
@@ -74,7 +80,7 @@ kameraların **farklı zamanlarda başlayıp bitmesinden** geliyor — bkz.
 
 ## Genel Veri Akışı
 
-İki ayrı, birbirine karıştırılmayan kullanım (senteik-veri Faz 1'de olduğu
+İki ayrı, birbirine karıştırılmayan kullanım (sentetik-veri Faz 1'de olduğu
 gibi):
 
 1. **Maskeleme → RL'nin gerçekte gördüğü sinyal.** Kameralar sabit olduğu
@@ -85,10 +91,11 @@ gibi):
    Faz 1'de bu XYZ+kalibrasyon projeksiyonundan geliyordu. **Gerçek veride
    yerini `detections/camN.txt`'teki hazır elle-etiketlenmiş 2D konumlar
    alıyor** — ayrıca projeksiyona gerek yok, çünkü etiket zaten piksel
-   cinsinden var. XYZ+kalibrasyon projeksiyon modülü (Bileşen 0, aşağıda)
-   kapsamdan çıkmadı; sadece rolü değişti — artık asıl ground-truth kaynağı
-   değil, (a) ileride Faz 2 (3D) için, (b) `camera-locations` verisi olan
-   dataset'lerde (3, 5) mesafe hesabı için kullanılıyor.
+   cinsinden var. XYZ+kalibrasyon projeksiyon modülü (`geometry/projection.py`,
+   Faz 1'in Task 1'i) kapsamdan çıkmadı; sadece rolü değişti — artık asıl
+   ground-truth kaynağı değil, ileride Faz 2 (3D) için saklı tutuluyor (bkz.
+   § Gerçek Veri Entegrasyonu — `campos.txt` kamera yönelimi eksikliği
+   nedeniyle Faz 1b'de mesafe hesabı için de kullanılmıyor).
 
 ## Bileşen 1: Maskeleme (Algı) Modülü
 
@@ -238,17 +245,28 @@ cam0'ın kaydının son ~%1-1.4'ünde bu şekilde devre dışı kalıyor — RL'
 kalite = 0.5 * yakınlık_norm + 0.5 * merkezleme_norm
 ```
 
-- **yakınlık_norm**: kamera-drone 3D Euclidean mesafesi
-  (`camera-locations/campos.txt` + `trajectory/rtk.txt`), **kamera başına**
-  min-max normalize edilir (o kameranın gördüğü en yakın an = 1, en uzak
-  an = 0) — mutlak mesafeler kameralar arasında karşılaştırılabilir değil
-  çünkü her kamera farklı bir konumda duruyor.
+**Düzeltme (2026-09-18):** İlk tasarım `campos.txt`+`rtk.txt` ile gerçek 3D
+mesafe hesaplamayı öngörüyordu; bu terk edildi çünkü (a) `rtk.txt`'nin
+kameralarla senkronizasyon kuralı belgelenmemiş, (b) kamera yönelimi
+(rotation) verisi yok. Yerine, ekstra veri gerektirmeyen görüntü-tabanlı bir
+vekil (proxy) kullanılıyor:
+
+- **yakınlık_norm**: `BackgroundSubtractor`'ın zaten hesapladığı **blob
+  alanı** (piksel², connected-components'tan `stats[..., CC_STAT_AREA]`) —
+  Bileşen 1'in `MaskResult`'ına yeni bir `blob_area: Optional[int]` alanı
+  eklenecek (mevcut `mask_crop`/`centroid`/`visible` alanlarına ek, geriye
+  dönük uyumlu). **Kamera başına** min-max normalize edilir (o kameranın
+  gördüğü en büyük blob = 1, en küçük/yok = 0) — drone kameraya ne kadar
+  yakınsa görüntüde o kadar büyük görünür, mutlak piksel alanı kameralar
+  arasında karşılaştırılabilir değil (çözünürlük/mesafe farklı).
 - **merkezleme_norm**: `detections/camN.txt`'teki (x,y) konumunun görüntü
   merkezine piksel uzaklığı, o kameranın çözünürlüğünün (kalibrasyon
   json'undan) yarı-köşegenine göre normalize edilir (merkez = 1, kenar/dışı
   ≈ 0, clamp edilir).
 - Kamera senkronize zaman diliminde kayıt dışıysa: kalite = 0.
 - Ağırlıklar (0.5/0.5) onaylandı; ileride ampirik olarak ayarlanabilir.
+- `campos.txt`/`rtk.txt` bu turda kullanılmıyor (yukarıya bkz.) — Faz 2 (3D)
+  için saklı tutuluyor.
 
 ### Gerekli yeni parser'lar / bileşenler (Faz 1b'nin kapsamı)
 
@@ -256,8 +274,10 @@ kalite = 0.5 * yakınlık_norm + 0.5 * merkezleme_norm
 - Kalibrasyon `<model>.json` parser → K-matrix, çözünürlük (merkezleme
   normalizasyonu için).
 - `detections/camN.txt` parser → sparse `{frame_id: (x, y)}` haritası.
-- `campos.txt` + `rtk.txt` parser → kamera 3D konumları + drone 3D
-  yörüngesi.
+- `MaskResult`'a `blob_area` alanı eklenmesi (Bileşen 1'in küçük, geriye
+  dönük uyumlu bir uzantısı — `background_subtraction.py`'de zaten
+  hesaplanan `stats[..., CC_STAT_AREA]` değerinin döndürülen sonuca
+  eklenmesi).
 - Senkronize zaman ekseni oluşturucu (alpha/beta tablosu → her cam0 karesi
   için diğer kameraların karşılık gelen frame_id'si + kayıtta-mı durumu).
 - Kalite skoru hesaplayıcı (yukarıdaki formül).
