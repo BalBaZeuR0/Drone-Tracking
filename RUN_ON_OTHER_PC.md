@@ -35,7 +35,7 @@ pip install -r requirements-lock.txt && pip install -e .
 (`requirements-lock.txt` tam sürümleri sabitler. Bir paket senin işletim
 sisteminde bulunamazsa `pip install -e .` bağımlılıkları kendisi çeker.)
 
-İsteğe bağlı doğrulama (~1 dk): `pytest -q` → `44 passed` görmelisin.
+İsteğe bağlı doğrulama (~1 dk): `pytest -q` → `50 passed` görmelisin.
 
 Önbellekleri `caches/` klasörüne koy (repo klasörünün içine).
 
@@ -45,7 +45,9 @@ sisteminde bulunamazsa `pip install -e .` bağımlılıkları kendisi çeker.)
 python -m dronetrackingrl.real_data.experiment inspect-cache caches/train_13442_23442.npz
 ```
 Kamera başına maskelemenin drone'u ne kadar doğru bulduğunu (precision /
-recall, piksel hatası) yazar.
+recall, piksel hatası) yazar. Maskeleme `SmallTargetDetector` ile yapıldı
+(gerçek etiketlere karşı doğrulandı: ~%85 isabet, 2-4 piksel konum hatası);
+eski yöntem (ilk kareye göre fark) gerçek çekimde çalışmadığı için terk edildi.
 
 ## 3) Koşuyu başlat
 
