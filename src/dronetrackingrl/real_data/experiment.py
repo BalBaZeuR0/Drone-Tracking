@@ -199,10 +199,17 @@ class CachedSignalProvider:
     kare okumadan, önbellekten. ``encoder=None`` ise gözlem sıfır vektörüdür
     (Random/Fixed/Oracle baseline'ları gözlemi kullanmaz)."""
 
-    def __init__(self, cache: SignalCache, encoder: Optional[MaskedCropAutoencoder], latent_dim: int):
+    def __init__(
+        self,
+        cache: SignalCache,
+        encoder: Optional[MaskedCropAutoencoder],
+        latent_dim: int,
+        latent_stats: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+    ):
         self.cache = cache
         self.encoder = encoder
         self.latent_dim = latent_dim
+        self.latent_stats = latent_stats  # (ortalama, std): gözlemi standartlaştırır
         self.num_cameras = len(cache.cameras)
         self._ref_frame = cache.ref_start
 
@@ -223,6 +230,9 @@ class CachedSignalProvider:
             batch = torch.from_numpy(self.cache.crops[i].astype(np.float32) / 255.0).unsqueeze(1)
             with torch.no_grad():
                 latents = self.encoder.encode(batch).numpy()
+            if self.latent_stats is not None:
+                mean, std = self.latent_stats
+                latents = ((latents - mean) / std).astype(np.float32)
         signals = []
         for j in range(self.num_cameras):
             px = self.cache.mask_pixel[i, j]
@@ -233,12 +243,32 @@ class CachedSignalProvider:
         return signals
 
 
+class RotatingProvider:
+    """Birden fazla sağlayıcıyı (farklı zaman aralıkları) her reset'te sırayla
+    kullanır: ajan hem 'cam0 hep görünür' hem 'cam0 kaybolur' bölümlerini görür."""
+
+    def __init__(self, providers: Sequence[CachedSignalProvider]):
+        self.providers = list(providers)
+        self.latent_dim = self.providers[0].latent_dim
+        self.num_cameras = self.providers[0].num_cameras
+        self._index = -1
+        self._current = self.providers[0]
+
+    def reset(self) -> List[CameraStepSignal]:
+        self._index = (self._index + 1) % len(self.providers)
+        self._current = self.providers[self._index]
+        return self._current.reset()
+
+    def step(self) -> Tuple[List[CameraStepSignal], bool]:
+        return self._current.step()
+
+
 # --------------------------------------------------------------------------
 # Encoder ön-eğitimi (önbellekten, mini-batch)
 # --------------------------------------------------------------------------
 def pretrain_encoder(
     encoder: MaskedCropAutoencoder,
-    cache: SignalCache,
+    cache,
     epochs: int = 20,
     batch_size: int = 256,
     lr: float = 1e-3,
@@ -246,8 +276,8 @@ def pretrain_encoder(
 ) -> List[float]:
     """Sadece maskelemenin drone bulduğu kırpımlarla (boş kırpımlar hariç)
     autoencoder'ı eğitir. Epoch başına ortalama kayıp listesini döndürür."""
-    detected = ~np.isnan(cache.mask_pixel[..., 0])
-    crops = cache.crops[detected]
+    caches = cache if isinstance(cache, (list, tuple)) else [cache]
+    crops = np.concatenate([c.crops[~np.isnan(c.mask_pixel[..., 0])] for c in caches])
     if len(crops) == 0:
         return []
     optimizer = torch.optim.Adam(encoder.parameters(), lr=lr)
@@ -270,14 +300,29 @@ def pretrain_encoder(
     return epoch_losses
 
 
+def compute_latent_stats(encoder: MaskedCropAutoencoder, cache, batch_size: int = 2048) -> Tuple[np.ndarray, np.ndarray]:
+    """Eğitim önbelleğindeki TÜM kırpımların (boşlar dahil) latent ortalama /
+    std'si. PPO'nun MLP'si küçük ölçekli, neredeyse sabit girdilere tepki
+    veremiyor; standartlaştırma bunu düzeltmek için."""
+    caches = cache if isinstance(cache, (list, tuple)) else [cache]
+    flat = np.concatenate([c.crops.reshape(-1, c.crop_size, c.crop_size) for c in caches])
+    chunks = []
+    with torch.no_grad():
+        for start in range(0, len(flat), batch_size):
+            batch = torch.from_numpy(flat[start : start + batch_size].astype(np.float32) / 255.0).unsqueeze(1)
+            chunks.append(encoder.encode(batch).numpy())
+    latents = np.concatenate(chunks)
+    return latents.mean(axis=0), np.maximum(latents.std(axis=0), 1e-3)
+
+
 # --------------------------------------------------------------------------
 # Değerlendirme
 # --------------------------------------------------------------------------
-def run_episode(cache: SignalCache, encoder, latent_dim: int, policy=None, model=None) -> List[dict]:
+def run_episode(cache: SignalCache, encoder, latent_dim: int, policy=None, model=None, latent_stats=None) -> List[dict]:
     """Bir bölüm (tüm önbellek aralığı) çalıştırır. Her adım için: hangi kare
     (ref_frame) için hangi kamera seçildi, seçilen görünür müydü, en az bir
     kamera görünür müydü, ve her kameranın görünürlüğü."""
-    env = CameraSwitchEnv(CachedSignalProvider(cache, encoder, latent_dim))
+    env = CameraSwitchEnv(CachedSignalProvider(cache, encoder, latent_dim, latent_stats))
     obs, info = env.reset()
     ref_frame = cache.ref_start
     rows: List[dict] = []
@@ -384,10 +429,14 @@ class ExperimentConfig:
     encoder_batch_size: int = 256
     ppo_n_steps: int = 2048
     ppo_batch_size: int = 64
-    ppo_gamma: float = 0.99
+    ppo_gamma: float = 0.0
+    ppo_lr: float = 3e-4
+    ppo_ent_coef: float = 0.0
+    normalize_latents: bool = True
     random_seeds: int = 5
     pack: bool = True
     train_range: Optional[Tuple[int, int]] = None  # önbelleğin alt aralığı
+    extra_train: List[Tuple[str, int, int]] = field(default_factory=list)  # (önbellek, başlangıç, bitiş)
     eval_range: Optional[Tuple[int, int]] = None
 
 
@@ -433,6 +482,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
     if config.eval_cache or config.eval_range:
         eval_cache = SignalCache.load(config.eval_cache or config.train_cache)
         caches["eval"] = eval_cache.slice(*config.eval_range) if config.eval_range else eval_cache
+    for k, (path, a, b) in enumerate(config.extra_train, start=1):
+        caches[f"train_extra{k}"] = SignalCache.load(path).slice(a, b)
     cameras = caches["train"].cameras
     for name, cache in caches.items():
         if cache.cameras != cameras:
@@ -469,7 +520,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
             results["baselines"][name]["best_fixed"]["visible_rate"],
         )
 
-    train_cache = caches["train"]
+    train_caches = [c for n, c in caches.items() if n.startswith("train")]
+    train_cache = train_caches[0]
     for seed in config.seeds:
         seed_dir = out_dir / f"seed_{seed}"
         seed_dir.mkdir(exist_ok=True)
@@ -477,30 +529,37 @@ def run_experiment(config: ExperimentConfig) -> dict:
         torch.manual_seed(seed)
         encoder = MaskedCropAutoencoder(crop_size=train_cache.crop_size, latent_dim=config.latent_dim)
         losses = pretrain_encoder(
-            encoder, train_cache, config.encoder_epochs, config.encoder_batch_size, seed=seed
+            encoder, train_caches, config.encoder_epochs, config.encoder_batch_size, seed=seed
         )
         if losses:
             logger.info("encoder kaybı: %.5f -> %.5f", losses[0], losses[-1])
 
+        latent_stats = compute_latent_stats(encoder, train_caches) if config.normalize_latents else None
         logger.info("--- seed %d: PPO eğitimi (%d adım) ---", seed, config.timesteps)
         vec_env = make_vec_env(
-            lambda: CameraSwitchEnv(CachedSignalProvider(train_cache, encoder, config.latent_dim)), n_envs=1
+            lambda: CameraSwitchEnv(
+                RotatingProvider([CachedSignalProvider(c, encoder, config.latent_dim, latent_stats) for c in train_caches])
+            ),
+            n_envs=1,
         )
         model = PPO(
             "MlpPolicy", vec_env, verbose=0, seed=seed, device="cpu",
             n_steps=config.ppo_n_steps, batch_size=config.ppo_batch_size, gamma=config.ppo_gamma,
+            learning_rate=config.ppo_lr, ent_coef=config.ppo_ent_coef,
         )
         model.set_logger(configure(str(seed_dir), ["stdout", "csv"]))
         train_started = time.time()
         model.learn(total_timesteps=config.timesteps)
         model.save(str(seed_dir / "ppo_model"))
         torch.save(encoder.state_dict(), seed_dir / "encoder.pt")
+        if latent_stats is not None:
+            np.savez(seed_dir / "latent_stats.npz", mean=latent_stats[0], std=latent_stats[1])
 
         run = {"encoder_loss_first": losses[0] if losses else None,
                "encoder_loss_last": losses[-1] if losses else None,
                "train_seconds": time.time() - train_started, "splits": {}}
         for name, cache in caches.items():
-            rows = run_episode(cache, encoder, config.latent_dim, model=model)
+            rows = run_episode(cache, encoder, config.latent_dim, model=model, latent_stats=latent_stats)
             _write_trace(seed_dir / f"trace_{name}.csv", rows)
             run["splits"][name] = summarize_rows(rows, cache.cameras)
             logger.info("seed %d %s: görünür oranı %.4f, kamera payı %s",
@@ -542,6 +601,8 @@ def main(argv=None) -> None:
     train = sub.add_parser("train", help="Önbellekten PPO eğit + raporla (kare gerekmez)")
     train.add_argument("--train-cache", required=True)
     train.add_argument("--eval-cache")
+    train.add_argument("--extra-train", nargs="+", metavar="ÖNBELLEK:BAŞLANGIÇ:BİTİŞ", default=[],
+                       help="ek eğitim kaynakları (ör. caches/eval.npz:28534:31500); her bölümde dönüşümlü kullanılır")
     train.add_argument("--train-range", type=int, nargs=2, metavar=("START", "END"),
                        help="eğitim önbelleğinin alt aralığı (ref_frame)")
     train.add_argument("--eval-range", type=int, nargs=2, metavar=("START", "END"),
@@ -554,8 +615,11 @@ def main(argv=None) -> None:
     train.add_argument("--encoder-batch-size", type=int, default=256)
     train.add_argument("--ppo-n-steps", type=int, default=2048)
     train.add_argument("--ppo-batch-size", type=int, default=64)
-    train.add_argument("--ppo-gamma", type=float, default=0.99,
-                       help="İndirim faktörü. Kamera seçimi sonraki kareyi etkilemediği için 0 mantıklı olabilir.")
+    train.add_argument("--ppo-lr", type=float, default=3e-4)
+    train.add_argument("--ppo-ent-coef", type=float, default=0.0)
+    train.add_argument("--no-normalize-latents", action="store_true", help="Gözlem standartlaştırmasını kapat")
+    train.add_argument("--ppo-gamma", type=float, default=0.0,
+                       help="İndirim faktörü. Kamera seçimi sonraki kareyi etkilemediği için (switch_penalty=0) 0 varsayılan.")
     train.add_argument("--random-seeds", type=int, default=5)
     train.add_argument("--no-pack", action="store_true")
 
@@ -576,9 +640,11 @@ def main(argv=None) -> None:
                 train_cache=args.train_cache, eval_cache=args.eval_cache, out_dir=args.out_dir,
                 timesteps=args.timesteps, seeds=args.seeds, latent_dim=args.latent_dim,
                 encoder_epochs=args.encoder_epochs, encoder_batch_size=args.encoder_batch_size,
-                ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size, ppo_gamma=args.ppo_gamma,
+                ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size, ppo_gamma=args.ppo_gamma, ppo_lr=args.ppo_lr, ppo_ent_coef=args.ppo_ent_coef,
+                normalize_latents=not args.no_normalize_latents,
                 random_seeds=args.random_seeds, pack=not args.no_pack,
                 train_range=tuple(args.train_range) if args.train_range else None,
+                extra_train=[(p, int(a), int(b)) for p, a, b in (spec.rsplit(':', 2) for spec in args.extra_train)],
                 eval_range=tuple(args.eval_range) if args.eval_range else None,
             )
         )

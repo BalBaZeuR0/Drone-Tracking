@@ -141,3 +141,20 @@ def test_slice_rejects_range_outside_cache():
 
     with pytest.raises(ValueError):
         _cam0_cache().slice(0, 3)
+
+
+def test_rotating_provider_alternates_sources_per_episode():
+    from dronetrackingrl.real_data.experiment import RotatingProvider
+
+    cache = _cam0_cache()
+    first, second = cache.slice(1, 2), cache.slice(2, 3)
+    rotating = RotatingProvider(
+        [CachedSignalProvider(first, None, LATENT_DIM), CachedSignalProvider(second, None, LATENT_DIM)]
+    )
+
+    rotating.reset()
+    assert rotating.step()[1] is True  # first source: 2 frames -> done after one step
+    rotating.reset()
+    assert rotating._current is rotating.providers[1]
+    rotating.reset()
+    assert rotating._current is rotating.providers[0]  # wraps around
