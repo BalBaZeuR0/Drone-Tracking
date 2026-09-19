@@ -66,8 +66,10 @@ bölümlerini görsün; test: hiç görmediği son aralık):
 python -m dronetrackingrl.real_data.experiment train   --train-cache caches/train_13442_23442.npz   --extra-train caches/eval_28534_33875.npz:28534:31500   --eval-cache caches/eval_28534_33875.npz --eval-range 31501 33875   --out-dir outputs/run_mixed --timesteps 60000 --seeds 0 1 2 --ppo-n-steps 1024
 ```
 Ters kat (test = 28534..31500): `--extra-train caches/eval_28534_33875.npz:31501:33875`
-ve `--eval-range 28534 31500`. Gözlem standartlaştırma ve `--ppo-gamma 0`
-varsayılan (bunlar olmadan PPO tek kameraya yapışıyordu).
+ve `--eval-range 28534 31500`. Varsayılanlar: gözlem standartlaştırma, `--ppo-gamma 0` ve
+`--policy shared` (her kameranın latent'ini aynı ağdan geçiren, kameradan bağımsız
+skorlayıcı; düz MLP için `--policy mlp`). Bunlar olmadan PPO tek kameraya yapışıyor
+ya da eğitimde gördüğü kamera alışkanlıklarını ezberliyor.
 
 Ayarlar: `--timesteps` PPO adım sayısı, `--seeds` her seed ayrı bir eğitim
 (3 seed = sonucun şansa bağlı olup olmadığını görmek için). Konsolda ilerleme
