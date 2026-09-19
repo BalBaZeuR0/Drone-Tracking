@@ -22,6 +22,7 @@ import platform
 import shutil
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -32,7 +33,7 @@ import torch
 from dronetrackingrl.baselines.policies import FixedCameraPolicy, OraclePolicy, RandomPolicy
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider
-from dronetrackingrl.real_data.sync import is_recording, mapped_frame
+from dronetrackingrl.real_data.sync import DATASET3, SYNC_TABLES, SyncTable, is_recording, mapped_frame
 from dronetrackingrl.real_data.training import load_detections
 from dronetrackingrl.rl_env.camera_switch_env import CameraSwitchEnv
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
@@ -113,6 +114,49 @@ class SignalCache:
         )
 
 
+    def pad_cameras(self, num_cameras: int) -> "SignalCache":
+        """Kamera sayısı farklı kaynakları tek bir politikayla eğitebilmek için
+        boş 'hayalet' kameralar ekler (kırpım sıfır, kayıtta değil, görünmez;
+        id'leri -1, -2, ...). Hayalet seçmek, hiçbir kamera görünmezken herhangi bir
+        kamerayı seçmekle aynı (-1) ödülü verir, yani öğrenmeyi bozmaz."""
+        extra = num_cameras - len(self.cameras)
+        if extra < 0:
+            raise ValueError(f"{len(self.cameras)} kamera {num_cameras}'e dolgulanamaz")
+        if extra == 0:
+            return self
+        n = self.num_frames
+        return SignalCache(
+            cameras=list(self.cameras) + [-(k + 1) for k in range(extra)],
+            reference_camera=self.reference_camera, ref_start=self.ref_start, ref_end=self.ref_end,
+            crop_size=self.crop_size,
+            crops=np.concatenate([self.crops, np.zeros((n, extra, *self.crops.shape[2:]), dtype=np.uint8)], axis=1),
+            recording=np.concatenate([self.recording, np.zeros((n, extra), dtype=bool)], axis=1),
+            visible=np.concatenate([self.visible, np.zeros((n, extra), dtype=bool)], axis=1),
+            mask_pixel=np.concatenate([self.mask_pixel, np.full((n, extra, 2), np.nan)], axis=1),
+            gt_pixel=np.concatenate([self.gt_pixel, np.full((n, extra, 2), np.nan)], axis=1),
+        )
+
+
+def merge_camera_caches(parts: Sequence["SignalCache"]) -> "SignalCache":
+    """Aynı aralık ve ayarlarla, kamera başına ayrı üretilmiş önbellekleri birleştirir."""
+    first = parts[0]
+    for part in parts:
+        if (part.ref_start, part.ref_end, part.reference_camera, part.crop_size) != (
+            first.ref_start, first.ref_end, first.reference_camera, first.crop_size
+        ):
+            raise ValueError("Birleştirilecek önbelleklerin aralık/ayarları aynı olmalı")
+    return SignalCache(
+        cameras=[c for part in parts for c in part.cameras],
+        reference_camera=first.reference_camera, ref_start=first.ref_start, ref_end=first.ref_end,
+        crop_size=first.crop_size,
+        crops=np.concatenate([p.crops for p in parts], axis=1),
+        recording=np.concatenate([p.recording for p in parts], axis=1),
+        visible=np.concatenate([p.visible for p in parts], axis=1),
+        mask_pixel=np.concatenate([p.mask_pixel for p in parts], axis=1),
+        gt_pixel=np.concatenate([p.gt_pixel for p in parts], axis=1),
+    )
+
+
 class _FlattenEncoder:
     """RealCameraSignalProvider'a 'encoder' olarak verilir; kırpımı olduğu gibi
     (düzleştirilmiş) geri döndürür, böylece ham kırpımı provider'ın kendi
@@ -132,6 +176,7 @@ def build_signal_cache(
     crop_size: int = 64,
     progress_every: int = 500,
     log=print,
+    sync_table: SyncTable = DATASET3,
 ) -> SignalCache:
     cameras = list(cameras)
     detections = load_detections(Path(detections_dir), cameras)
@@ -145,6 +190,7 @@ def build_signal_cache(
         end_ref_frame=ref_end,
         reference_camera=reference_camera,
         crop_size=crop_size,
+        sync_table=sync_table,
     )
     n_ref = ref_end - ref_start + 1
     n_cam = len(cameras)
@@ -158,12 +204,12 @@ def build_signal_cache(
         ref_frame = ref_start + index
         for j, (camera, signal) in enumerate(zip(cameras, signals)):
             crops[index, j] = np.rint(signal.latent.reshape(crop_size, crop_size) * 255.0).astype(np.uint8)
-            recording[index, j] = is_recording(ref_frame, camera, reference_camera)
+            recording[index, j] = is_recording(ref_frame, camera, reference_camera, sync_table)
             visible[index, j] = signal.visible
             if signal.pixel is not None:
                 mask_pixel[index, j] = signal.pixel
             if signal.visible:
-                frame_id = round(mapped_frame(ref_frame, reference_camera, camera))
+                frame_id = round(mapped_frame(ref_frame, reference_camera, camera, sync_table))
                 gt_pixel[index, j] = detections[camera][frame_id]
 
     started = time.time()
@@ -192,6 +238,30 @@ def build_signal_cache(
         mask_pixel=mask_pixel,
         gt_pixel=gt_pixel,
     )
+
+
+def _build_one_camera(args) -> SignalCache:
+    frames_root, detections_dir, camera, ref_start, ref_end, reference_camera, crop_size, sync_name = args
+    return build_signal_cache(
+        frames_root, detections_dir, [camera], ref_start, ref_end, reference_camera=reference_camera,
+        crop_size=crop_size, progress_every=1000, log=lambda m: print(f"  [cam{camera}] {m.strip()}", flush=True),
+        sync_table=SYNC_TABLES[sync_name],
+    )
+
+
+def build_signal_cache_parallel(
+    frames_root, detections_dir, cameras: Sequence[int], ref_start: int, ref_end: int,
+    sync_name: str, workers: int, reference_camera: int = 0, crop_size: int = 64,
+) -> SignalCache:
+    """Kameralar birbirinden bağımsız (her birinin kendi dedektörü) olduğu için
+    kamera başına ayrı süreçte üretip birleştirmek seri üretimle birebir aynıdır."""
+    jobs = [
+        (str(frames_root), str(detections_dir), c, ref_start, ref_end, reference_camera, crop_size, sync_name)
+        for c in cameras
+    ]
+    with ProcessPoolExecutor(max_workers=workers) as pool:
+        parts = list(pool.map(_build_one_camera, jobs))
+    return merge_camera_caches(parts)
 
 
 class CachedSignalProvider:
@@ -485,11 +555,12 @@ def run_experiment(config: ExperimentConfig) -> dict:
         caches["eval"] = eval_cache.slice(*config.eval_range) if config.eval_range else eval_cache
     for k, (path, a, b) in enumerate(config.extra_train, start=1):
         caches[f"train_extra{k}"] = SignalCache.load(path).slice(a, b)
-    cameras = caches["train"].cameras
     for name, cache in caches.items():
-        if cache.cameras != cameras:
-            raise ValueError(f"'{name}' önbelleğinin kameraları farklı: {cache.cameras} != {cameras}")
         logger.info("%s önbelleği: ref_frame %d..%d, kameralar %s", name, cache.ref_start, cache.ref_end, cache.cameras)
+    # Kamera sayısı kaynaklara göre değişebilir (dataset3: 6, dataset4: 7) -> en
+    # büyüğe hayalet kameralarla dolgula. Baseline/tanılar dolgusuz (gerçek) önbellekte.
+    num_cameras = max(len(c.cameras) for c in caches.values())
+    padded = {name: cache.pad_cameras(num_cameras) for name, cache in caches.items()}
 
     results: dict = {
         "config": asdict(config),
@@ -511,6 +582,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
             "ref_start": cache.ref_start,
             "ref_end": cache.ref_end,
             "steps": cache.num_frames - 1,
+            "cameras": cache.cameras,
         }
         logger.info(
             "%s baseline'ları: oracle %.4f | rastgele %.4f | en iyi sabit cam%s %.4f",
@@ -521,7 +593,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
             results["baselines"][name]["best_fixed"]["visible_rate"],
         )
 
-    train_caches = [c for n, c in caches.items() if n.startswith("train")]
+    train_caches = [c for n, c in caches.items() if n.startswith("train")]  # dolgusuz: ön-eğitim/istatistik için
+    padded_train_caches = [c for n, c in padded.items() if n.startswith("train")]
     train_cache = train_caches[0]
     for seed in config.seeds:
         seed_dir = out_dir / f"seed_{seed}"
@@ -539,7 +612,9 @@ def run_experiment(config: ExperimentConfig) -> dict:
         logger.info("--- seed %d: PPO eğitimi (%d adım) ---", seed, config.timesteps)
         vec_env = make_vec_env(
             lambda: CameraSwitchEnv(
-                RotatingProvider([CachedSignalProvider(c, encoder, config.latent_dim, latent_stats) for c in train_caches])
+                RotatingProvider(
+                    [CachedSignalProvider(c, encoder, config.latent_dim, latent_stats) for c in padded_train_caches]
+                )
             ),
             n_envs=1,
         )
@@ -547,7 +622,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
             from dronetrackingrl.real_data.policy import SharedCameraPolicy
 
             policy, policy_kwargs = SharedCameraPolicy, dict(
-                num_cameras=len(cameras), latent_dim=config.latent_dim
+                num_cameras=num_cameras, latent_dim=config.latent_dim
             )
         elif config.policy == "mlp":
             policy, policy_kwargs = "MlpPolicy", {}
@@ -569,7 +644,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
         run = {"encoder_loss_first": losses[0] if losses else None,
                "encoder_loss_last": losses[-1] if losses else None,
                "train_seconds": time.time() - train_started, "splits": {}}
-        for name, cache in caches.items():
+        for name, cache in padded.items():
             rows = run_episode(cache, encoder, config.latent_dim, model=model, latent_stats=latent_stats)
             _write_trace(seed_dir / f"trace_{name}.csv", rows)
             run["splits"][name] = summarize_rows(rows, cache.cameras)
@@ -605,6 +680,10 @@ def main(argv=None) -> None:
     build.add_argument("--cameras", type=int, nargs="+", default=[0, 1, 2, 3, 4, 5])
     build.add_argument("--reference-camera", type=int, default=0)
     build.add_argument("--crop-size", type=int, default=64)
+    build.add_argument("--sync", choices=sorted(SYNC_TABLES), default="dataset3",
+                       help="hangi dataset'in senkronizasyon tablosu")
+    build.add_argument("--workers", type=int, default=1,
+                       help="kamera başına ayrı süreç (bellek: süreç başına ~0.5GB)")
 
     inspect = sub.add_parser("inspect-cache", help="Önbelleğin gözlem-kalitesi tanılarını yazdır")
     inspect.add_argument("cache")
@@ -638,11 +717,17 @@ def main(argv=None) -> None:
 
     args = parser.parse_args(argv)
     if args.command == "build-cache":
-        cache = build_signal_cache(
-            args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
-            reference_camera=args.reference_camera, crop_size=args.crop_size,
-            log=lambda msg: print(msg, flush=True),
-        )
+        if args.workers > 1:
+            cache = build_signal_cache_parallel(
+                args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
+                args.sync, args.workers, reference_camera=args.reference_camera, crop_size=args.crop_size,
+            )
+        else:
+            cache = build_signal_cache(
+                args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
+                reference_camera=args.reference_camera, crop_size=args.crop_size,
+                log=lambda msg: print(msg, flush=True), sync_table=SYNC_TABLES[args.sync],
+            )
         cache.save(args.out)
         print(f"Kaydedildi: {args.out} ({Path(args.out).stat().st_size / 1e6:.1f} MB)", flush=True)
     elif args.command == "inspect-cache":

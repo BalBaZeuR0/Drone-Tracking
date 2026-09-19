@@ -8,7 +8,7 @@ import torch
 
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.masking.small_target_detector import SmallTargetDetector
-from dronetrackingrl.real_data.sync import is_recording, mapped_frame
+from dronetrackingrl.real_data.sync import DATASET3, SyncTable, is_recording, mapped_frame
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,7 @@ class RealCameraSignalProvider:
         crop_size: int = 64,
         frame_reader: Callable[[Path, int, int], Optional[np.ndarray]] = default_frame_reader,
         detector_factory: Callable[[int], object] = SmallTargetDetector,
+        sync_table: SyncTable = DATASET3,
     ):
         self.frames_root = frames_root
         self.detections = detections
@@ -58,6 +59,7 @@ class RealCameraSignalProvider:
         self.reference_camera = reference_camera
         self.crop_size = crop_size
         self.frame_reader = frame_reader
+        self.sync_table = sync_table
         self._detectors = {camera: detector_factory(crop_size) for camera in cameras}
         self._ref_frame = start_ref_frame
 
@@ -76,8 +78,8 @@ class RealCameraSignalProvider:
     def signals_for_ref_frame(self, ref_frame: int) -> List[CameraStepSignal]:
         signals = []
         for camera in self.cameras:
-            camera_frame_id = round(mapped_frame(ref_frame, self.reference_camera, camera))
-            recording = is_recording(ref_frame, camera, self.reference_camera)
+            camera_frame_id = round(mapped_frame(ref_frame, self.reference_camera, camera, self.sync_table))
+            recording = is_recording(ref_frame, camera, self.reference_camera, self.sync_table)
             detector = self._detectors[camera]
 
             frame = None
