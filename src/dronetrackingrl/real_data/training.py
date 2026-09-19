@@ -7,7 +7,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
-from dronetrackingrl.masking.background_subtraction import BackgroundSubtractor
+from dronetrackingrl.masking.small_target_detector import SmallTargetDetector
 from dronetrackingrl.real_data.detections import parse_detections_file
 from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider, default_frame_reader
 from dronetrackingrl.real_data.sync import is_recording, mapped_frame
@@ -33,13 +33,13 @@ def collect_crops(
 ) -> List[np.ndarray]:
     """Encoder ön-eğitimi için kameraların kayıtta olduğu ve drone'un
     gerçekten tespit edildiği karelerde maskelenmiş kırpım toplar
-    (RealCameraSignalProvider'dan bağımsız, kendi BackgroundSubtractor'larıyla
+    (RealCameraSignalProvider'dan bağımsız, kendi SmallTargetDetector'larıyla
     — encode edilmemiş ham kırpımlara ihtiyaç var). Tespit edilmeyen (boş)
     kareler bilerek atlanıyor: dataset3'ün gerçek görünürlük oranları
     (%42-94) göz önüne alındığında, bunları dahil etmek eğitim setinin
     büyük bir kısmını tekdüze sıfır kırpımla doldurup encoder'ı bozardı."""
     crops: List[np.ndarray] = []
-    subtractors = {camera: BackgroundSubtractor(crop_size=crop_size) for camera in cameras}
+    detectors = {camera: SmallTargetDetector(crop_size=crop_size) for camera in cameras}
     for ref_frame in range(start_ref_frame, end_ref_frame + 1):
         for camera in cameras:
             if not is_recording(ref_frame, camera, reference_camera):
@@ -48,7 +48,7 @@ def collect_crops(
             frame = default_frame_reader(frames_root, camera, camera_frame_id)
             if frame is None:
                 continue
-            result = subtractors[camera].update(frame)
+            result = detectors[camera].update(frame)
             if result.visible:
                 crops.append(result.mask_crop)
     return crops

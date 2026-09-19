@@ -7,7 +7,7 @@ import numpy as np
 import torch
 
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
-from dronetrackingrl.masking.background_subtraction import BackgroundSubtractor
+from dronetrackingrl.masking.small_target_detector import SmallTargetDetector
 from dronetrackingrl.real_data.sync import is_recording, mapped_frame
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
 
@@ -27,10 +27,10 @@ class RealCameraSignalProvider:
     kayıt durumundan gelir -- maskeleme modülü asla reward'a karışmaz, sadece
     latent gözlemi üretir (spec'in "iki ayrı kullanım" ayrımı).
 
-    Ön koşul: `start_ref_frame`, çağıranın detections[reference_camera]'da
-    drone'un görünmediğini (None) doğruladığı bir referans-kamera karesi
-    olmalı -- BackgroundSubtractor'ın ilk update() çağrısı drone-free bir
-    kare varsayıyor.
+    Maskeleme için varsayılan `SmallTargetDetector` (gerçek çekimlerde
+    ground-truth'a karşı doğrulandı); ilk kare boş olmak zorunda değil, sadece
+    ilk birkaç kare (warm-up) tespit üretmez. `detector_factory(crop_size)`
+    ile başka bir dedektör (örn. Faz 1'in BackgroundSubtractor'ı) verilebilir.
     """
 
     def __init__(
@@ -45,6 +45,7 @@ class RealCameraSignalProvider:
         reference_camera: int = 0,
         crop_size: int = 64,
         frame_reader: Callable[[Path, int, int], Optional[np.ndarray]] = default_frame_reader,
+        detector_factory: Callable[[int], object] = SmallTargetDetector,
     ):
         self.frames_root = frames_root
         self.detections = detections
@@ -57,12 +58,12 @@ class RealCameraSignalProvider:
         self.reference_camera = reference_camera
         self.crop_size = crop_size
         self.frame_reader = frame_reader
-        self._subtractors = {camera: BackgroundSubtractor(crop_size=crop_size) for camera in cameras}
+        self._detectors = {camera: detector_factory(crop_size) for camera in cameras}
         self._ref_frame = start_ref_frame
 
     def reset(self) -> List[CameraStepSignal]:
-        for subtractor in self._subtractors.values():
-            subtractor.reset()
+        for detector in self._detectors.values():
+            detector.reset()
         self._ref_frame = self.start_ref_frame
         return self.signals_for_ref_frame(self._ref_frame)
 
@@ -77,7 +78,7 @@ class RealCameraSignalProvider:
         for camera in self.cameras:
             camera_frame_id = round(mapped_frame(ref_frame, self.reference_camera, camera))
             recording = is_recording(ref_frame, camera, self.reference_camera)
-            subtractor = self._subtractors[camera]
+            detector = self._detectors[camera]
 
             frame = None
             if recording:
@@ -90,7 +91,7 @@ class RealCameraSignalProvider:
                     )
 
             if recording and frame is not None:
-                mask_result = subtractor.update(frame)
+                mask_result = detector.update(frame)
                 # `self.detections[camera]` (not `.get(camera, {})`): a camera
                 # entirely missing from `detections` is a caller wiring
                 # mistake and must raise loudly, not silently degrade to

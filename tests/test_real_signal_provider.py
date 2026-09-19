@@ -150,3 +150,36 @@ def test_signals_for_ref_frame_raises_keyerror_when_camera_missing_from_detectio
 
     with pytest.raises(KeyError):
         provider.signals_for_ref_frame(0)
+
+
+def test_detector_factory_is_used_for_masking_but_never_for_visibility():
+    from dronetrackingrl.masking.background_subtraction import MaskResult
+
+    class StubDetector:
+        resets = 0
+
+        def __init__(self, crop_size):
+            self.crop_size = crop_size
+
+        def reset(self):
+            StubDetector.resets += 1
+
+        def update(self, frame):
+            # Claims "not visible" -- the provider's visible flag must ignore this.
+            return MaskResult(np.ones((self.crop_size, self.crop_size), dtype=np.float32), (5.0, 6.0), False)
+
+    provider = RealCameraSignalProvider(
+        frames_root=FRAMES_ROOT,
+        detections={0: parse_detections_file(CAM0_DETECTIONS_PATH)},
+        cameras=[0],
+        encoder=MaskedCropAutoencoder(crop_size=64, latent_dim=LATENT_DIM),
+        latent_dim=LATENT_DIM,
+        start_ref_frame=1,
+        end_ref_frame=3,
+        detector_factory=StubDetector,
+    )
+    signals = provider.reset()
+
+    assert StubDetector.resets == 1
+    assert signals[0].pixel == (5.0, 6.0)  # taken from the detector
+    assert signals[0].visible is True  # ground truth (frame 1 is labeled visible), not the stub's False

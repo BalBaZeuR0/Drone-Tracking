@@ -37,7 +37,7 @@ from dronetrackingrl.real_data.training import load_detections
 from dronetrackingrl.rl_env.camera_switch_env import CameraSwitchEnv
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
 
-CACHE_VERSION = 1
+CACHE_VERSION = 2  # v2: maskeleme SmallTargetDetector (kırpım = blackhat tepkisi, blob merkezi ham piksel)
 logger = logging.getLogger("dronetrackingrl.experiment")
 
 
