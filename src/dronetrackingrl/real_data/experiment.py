@@ -61,6 +61,20 @@ class SignalCache:
     def num_frames(self) -> int:
         return self.ref_end - self.ref_start + 1
 
+    def slice(self, ref_start: int, ref_end: int) -> "SignalCache":
+        """[ref_start, ref_end] alt aralığı (önbelleğin içinde olmalı)."""
+        if not (self.ref_start <= ref_start < ref_end <= self.ref_end):
+            raise ValueError(
+                f"Aralık [{ref_start}, {ref_end}] önbellek aralığı [{self.ref_start}, {self.ref_end}] içinde değil"
+            )
+        a, b = ref_start - self.ref_start, ref_end - self.ref_start + 1
+        return SignalCache(
+            cameras=list(self.cameras), reference_camera=self.reference_camera,
+            ref_start=ref_start, ref_end=ref_end, crop_size=self.crop_size,
+            crops=self.crops[a:b], recording=self.recording[a:b], visible=self.visible[a:b],
+            mask_pixel=self.mask_pixel[a:b], gt_pixel=self.gt_pixel[a:b],
+        )
+
     def save(self, path) -> None:
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -370,8 +384,11 @@ class ExperimentConfig:
     encoder_batch_size: int = 256
     ppo_n_steps: int = 2048
     ppo_batch_size: int = 64
+    ppo_gamma: float = 0.99
     random_seeds: int = 5
     pack: bool = True
+    train_range: Optional[Tuple[int, int]] = None  # önbelleğin alt aralığı
+    eval_range: Optional[Tuple[int, int]] = None
 
 
 def _write_trace(path: Path, rows: List[dict]) -> None:
@@ -411,8 +428,11 @@ def run_experiment(config: ExperimentConfig) -> dict:
 
     started = time.time()
     caches = {"train": SignalCache.load(config.train_cache)}
-    if config.eval_cache:
-        caches["eval"] = SignalCache.load(config.eval_cache)
+    if config.train_range:
+        caches["train"] = caches["train"].slice(*config.train_range)
+    if config.eval_cache or config.eval_range:
+        eval_cache = SignalCache.load(config.eval_cache or config.train_cache)
+        caches["eval"] = eval_cache.slice(*config.eval_range) if config.eval_range else eval_cache
     cameras = caches["train"].cameras
     for name, cache in caches.items():
         if cache.cameras != cameras:
@@ -468,7 +488,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
         )
         model = PPO(
             "MlpPolicy", vec_env, verbose=0, seed=seed, device="cpu",
-            n_steps=config.ppo_n_steps, batch_size=config.ppo_batch_size,
+            n_steps=config.ppo_n_steps, batch_size=config.ppo_batch_size, gamma=config.ppo_gamma,
         )
         model.set_logger(configure(str(seed_dir), ["stdout", "csv"]))
         train_started = time.time()
@@ -522,6 +542,10 @@ def main(argv=None) -> None:
     train = sub.add_parser("train", help="Önbellekten PPO eğit + raporla (kare gerekmez)")
     train.add_argument("--train-cache", required=True)
     train.add_argument("--eval-cache")
+    train.add_argument("--train-range", type=int, nargs=2, metavar=("START", "END"),
+                       help="eğitim önbelleğinin alt aralığı (ref_frame)")
+    train.add_argument("--eval-range", type=int, nargs=2, metavar=("START", "END"),
+                       help="test için alt aralık (--eval-cache verilmezse eğitim önbelleğinden alınır)")
     train.add_argument("--out-dir", required=True)
     train.add_argument("--timesteps", type=int, default=100_000)
     train.add_argument("--seeds", type=int, nargs="+", default=[0])
@@ -530,6 +554,8 @@ def main(argv=None) -> None:
     train.add_argument("--encoder-batch-size", type=int, default=256)
     train.add_argument("--ppo-n-steps", type=int, default=2048)
     train.add_argument("--ppo-batch-size", type=int, default=64)
+    train.add_argument("--ppo-gamma", type=float, default=0.99,
+                       help="İndirim faktörü. Kamera seçimi sonraki kareyi etkilemediği için 0 mantıklı olabilir.")
     train.add_argument("--random-seeds", type=int, default=5)
     train.add_argument("--no-pack", action="store_true")
 
@@ -550,8 +576,10 @@ def main(argv=None) -> None:
                 train_cache=args.train_cache, eval_cache=args.eval_cache, out_dir=args.out_dir,
                 timesteps=args.timesteps, seeds=args.seeds, latent_dim=args.latent_dim,
                 encoder_epochs=args.encoder_epochs, encoder_batch_size=args.encoder_batch_size,
-                ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size,
+                ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size, ppo_gamma=args.ppo_gamma,
                 random_seeds=args.random_seeds, pack=not args.no_pack,
+                train_range=tuple(args.train_range) if args.train_range else None,
+                eval_range=tuple(args.eval_range) if args.eval_range else None,
             )
         )
 

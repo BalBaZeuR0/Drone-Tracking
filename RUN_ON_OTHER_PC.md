@@ -60,6 +60,12 @@ python -m dronetrackingrl.real_data.experiment train \
 ```
 (PowerShell'de satır sonu için `\` yerine `` ` `` kullan ya da tek satıra yaz.)
 
+Alternatif (asıl kamera-değiştirme ihtiyacı olan aralığı böl; tek önbellekten):
+```
+python -m dronetrackingrl.real_data.experiment train   --train-cache caches/eval_28534_33875.npz --train-range 28534 31500 --eval-range 31501 33875   --out-dir outputs/run_split --timesteps 100000 --seeds 0 1 2 --ppo-n-steps 1024
+```
+(`--ppo-gamma 0` de denenebilir: kamera seçimi sonraki kareyi etkilemediği için.)
+
 Ayarlar: `--timesteps` PPO adım sayısı, `--seeds` her seed ayrı bir eğitim
 (3 seed = sonucun şansa bağlı olup olmadığını görmek için). Konsolda ilerleme
 akar; aynı şey `outputs/run1/run.log`'a da yazılır.

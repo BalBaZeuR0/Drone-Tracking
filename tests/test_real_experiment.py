@@ -126,3 +126,18 @@ def test_run_experiment_writes_all_outputs_and_zip(tmp_path):
     saved = json.loads((out_dir / "results.json").read_text(encoding="utf-8"))
     assert saved["ppo"]["0"]["splits"]["train"]["visible_rate"] == 1.0  # single always-visible camera
     assert results["baselines"]["train"]["oracle"]["visible_rate"] == 1.0
+
+
+def test_slice_returns_matching_subrange():
+    cache = _cam0_cache()
+    part = cache.slice(2, 3)
+    assert (part.ref_start, part.ref_end, part.num_frames) == (2, 3, 2)
+    np.testing.assert_array_equal(part.crops, cache.crops[1:3])
+    np.testing.assert_array_equal(part.visible, cache.visible[1:3])
+
+
+def test_slice_rejects_range_outside_cache():
+    import pytest
+
+    with pytest.raises(ValueError):
+        _cam0_cache().slice(0, 3)
