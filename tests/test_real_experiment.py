@@ -230,3 +230,20 @@ def test_run_experiment_trains_across_sources_with_different_camera_counts(tmp_p
     # baselines see only the real cameras; PPO may also "see" ghost cameras
     assert set(results["baselines"]["train"]["fixed"]) == {str(c) for c in range(6)}
     assert set(results["ppo"]["0"]["splits"]["train"]["camera_share"]) == {"0", "1", "2", "3", "4", "5", "-1"}  # 6 real + 1 ghost
+
+
+def test_parallel_builder_saves_parts_and_resumes_without_reading_frames(tmp_path):
+    from dronetrackingrl.real_data.experiment import build_signal_cache_parallel
+
+    parts = tmp_path / "parts"
+    first = build_signal_cache_parallel(
+        FRAMES_ROOT, DETECTIONS_DIR, [0, 3], 1, 3, sync_name="dataset3", workers=2, parts_dir=parts
+    )
+    assert len(list(parts.glob("*.npz"))) == 2  # one finished part per camera
+
+    # Interrupted-run resume: the frames are gone, yet finished parts are reused as-is.
+    resumed = build_signal_cache_parallel(
+        tmp_path / "missing_frames", DETECTIONS_DIR, [0, 3], 1, 3, sync_name="dataset3", workers=1, parts_dir=parts
+    )
+    np.testing.assert_array_equal(resumed.crops, first.crops)
+    np.testing.assert_array_equal(resumed.visible, first.visible)

@@ -18,9 +18,11 @@ import argparse
 import csv
 import json
 import logging
+import os
 import platform
 import shutil
 import sys
+import tempfile
 import time
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, dataclass, field
@@ -32,7 +34,7 @@ import torch
 
 from dronetrackingrl.baselines.policies import FixedCameraPolicy, OraclePolicy, RandomPolicy
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
-from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider
+from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider, default_frame_reader
 from dronetrackingrl.real_data.sync import DATASET3, SYNC_TABLES, SyncTable, is_recording, mapped_frame
 from dronetrackingrl.real_data.training import load_detections
 from dronetrackingrl.rl_env.camera_switch_env import CameraSwitchEnv
@@ -157,6 +159,23 @@ def merge_camera_caches(parts: Sequence["SignalCache"]) -> "SignalCache":
     )
 
 
+class _LastFrameMemo:
+    """Düşük fps'li kameralar referans ekseninde aynı kareyi art arda istiyor
+    (alpha < 1); tekrar decode etmeyip son kareyi döndürür. Çıktı aynıdır."""
+
+    def __init__(self, reader=default_frame_reader):
+        self._reader = reader
+        self._last_key = None
+        self._last_frame = None
+
+    def __call__(self, frames_root, camera, frame_id):
+        key = (str(frames_root), camera, frame_id)
+        if key != self._last_key:
+            self._last_frame = self._reader(frames_root, camera, frame_id)
+            self._last_key = key
+        return self._last_frame
+
+
 class _FlattenEncoder:
     """RealCameraSignalProvider'a 'encoder' olarak verilir; kırpımı olduğu gibi
     (düzleştirilmiş) geri döndürür, böylece ham kırpımı provider'ın kendi
@@ -191,6 +210,7 @@ def build_signal_cache(
         reference_camera=reference_camera,
         crop_size=crop_size,
         sync_table=sync_table,
+        frame_reader=_LastFrameMemo(),
     )
     n_ref = ref_end - ref_start + 1
     n_cam = len(cameras)
@@ -240,28 +260,53 @@ def build_signal_cache(
     )
 
 
-def _build_one_camera(args) -> SignalCache:
-    frames_root, detections_dir, camera, ref_start, ref_end, reference_camera, crop_size, sync_name = args
-    return build_signal_cache(
+def _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size) -> Path:
+    return Path(parts_dir) / f"{sync_name}_cam{camera}_{ref_start}_{ref_end}_r{reference_camera}_c{crop_size}.npz"
+
+
+def _build_one_camera(args) -> str:
+    (frames_root, detections_dir, camera, ref_start, ref_end, reference_camera, crop_size, sync_name,
+     parts_dir) = args
+    path = _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size)
+    if path.exists():  # önceki (yarım kalmış) bir koşudan tamamlanmış parça
+        print(f"  [cam{camera}] hazır parça bulundu, atlanıyor: {path.name}", flush=True)
+        return str(path)
+    cache = build_signal_cache(
         frames_root, detections_dir, [camera], ref_start, ref_end, reference_camera=reference_camera,
         crop_size=crop_size, progress_every=1000, log=lambda m: print(f"  [cam{camera}] {m.strip()}", flush=True),
         sync_table=SYNC_TABLES[sync_name],
     )
+    temp = path.with_name(path.name + ".tmp")
+    cache.save(temp)
+    os.replace(temp, path)  # yarım yazılmış dosya asla "hazır parça" sayılmasın
+    print(f"  [cam{camera}] parça kaydedildi: {path.name}", flush=True)
+    return str(path)
 
 
 def build_signal_cache_parallel(
     frames_root, detections_dir, cameras: Sequence[int], ref_start: int, ref_end: int,
-    sync_name: str, workers: int, reference_camera: int = 0, crop_size: int = 64,
+    sync_name: str, workers: int, reference_camera: int = 0, crop_size: int = 64, parts_dir=None,
 ) -> SignalCache:
     """Kameralar birbirinden bağımsız (her birinin kendi dedektörü) olduğu için
-    kamera başına ayrı süreçte üretip birleştirmek seri üretimle birebir aynıdır."""
+    kamera başına ayrı süreçte üretip birleştirmek seri üretimle birebir aynıdır.
+    Her kamera bitince ``parts_dir``'e kaydedilir: koşu bellek yetersizliği vb.
+    ile kesilirse aynı komut tamamlanmış kameraları atlayıp devam eder."""
+    temporary = parts_dir is None
+    parts_dir = tempfile.mkdtemp(prefix="cache_parts_") if temporary else parts_dir
+    Path(parts_dir).mkdir(parents=True, exist_ok=True)
     jobs = [
-        (str(frames_root), str(detections_dir), c, ref_start, ref_end, reference_camera, crop_size, sync_name)
+        (str(frames_root), str(detections_dir), c, ref_start, ref_end, reference_camera, crop_size, sync_name,
+         str(parts_dir))
         for c in cameras
     ]
-    with ProcessPoolExecutor(max_workers=workers) as pool:
-        parts = list(pool.map(_build_one_camera, jobs))
-    return merge_camera_caches(parts)
+    try:
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            paths = list(pool.map(_build_one_camera, jobs))
+        merged = merge_camera_caches([SignalCache.load(path) for path in paths])
+    finally:
+        if temporary:
+            shutil.rmtree(parts_dir, ignore_errors=True)
+    return merged
 
 
 class CachedSignalProvider:
@@ -683,7 +728,9 @@ def main(argv=None) -> None:
     build.add_argument("--sync", choices=sorted(SYNC_TABLES), default="dataset3",
                        help="hangi dataset'in senkronizasyon tablosu")
     build.add_argument("--workers", type=int, default=1,
-                       help="kamera başına ayrı süreç (bellek: süreç başına ~0.5GB)")
+                       help="kamera başına ayrı süreç (bellek: süreç başına ~0.5-1GB)")
+    build.add_argument("--parts-dir", help="kamera başına parçaların saklanacağı klasör; koşu kesilirse "
+                                           "aynı komutla kaldığı yerden devam eder (--workers > 1 ile)")
 
     inspect = sub.add_parser("inspect-cache", help="Önbelleğin gözlem-kalitesi tanılarını yazdır")
     inspect.add_argument("cache")
@@ -721,6 +768,7 @@ def main(argv=None) -> None:
             cache = build_signal_cache_parallel(
                 args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
                 args.sync, args.workers, reference_camera=args.reference_camera, crop_size=args.crop_size,
+                parts_dir=args.parts_dir,
             )
         else:
             cache = build_signal_cache(
