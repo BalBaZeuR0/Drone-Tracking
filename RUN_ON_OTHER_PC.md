@@ -1,113 +1,133 @@
-# Başka PC'de koşu — kurulum ve çıktıyı geri getirme
+# Diğer PC'de eğitim — adım adım
 
-Bu PC'de pahalı kısım (24GB'lık karelerden maskeleme) bir kez yapılıp küçük
-önbellek dosyalarına (`caches/*.npz`) yazıldı. Diğer PC'de **veri setine
-gerek yok**; sadece kod + bu önbellekler + Python yeterli. İnternet ve GPU
-gerekmez (küçük model, CPU). Bellek ihtiyacı ~2-3GB.
+Amaç: dataset3 ve dataset4 ile eğitim, ve **hiç görmediği sahnede** test
+(dataset3'te eğit → dataset4'te test et, tersi, ve karışık).
+Dataset 1/2'de kameralar arası senkronizasyon bilgisi, dataset 5'te 2D etiket
+olmadığı için bunlar kullanılamıyor.
 
-## Pakette ne olmalı
+Sıra: **(1)** kurulum → **(2)** hızlı deneme → **(3)** kareleri çıkar →
+**(4)** önbellek üret → **(5)** kontrol → **(6)** eğitim → **(7)** sonucu geri getir.
 
-```
-DroneTransfer/
-  code.zip                      # kod (git archive)
-  caches/train_13442_23442.npz  # eğitim aralığı önbelleği
-  caches/eval_28534_33875.npz   # bekletilmiş (held-out) test aralığı
-  RUN_ON_OTHER_PC.md            # bu dosya
-```
+## Başlamadan önce
+
+| Gereken | Ne kadar |
+|---|---|
+| Python | 3.10 veya üstü (bu PC'de 3.12 ile test edildi) |
+| Boş disk | ~65 GB (dataset3 kareleri ~24GB, dataset4 ~30GB, geçici video birkaç GB) |
+| RAM | ≥ 8 GB önerilir. Kare çıkarma / önbellek üretimi süreç başına ~0.5-1GB, eğitim ~5-6GB |
+| Dataset | `drone-tracking-datasets` klasörü (indirdiğin), içinde `dataset3`, `dataset4` |
+
+Aşağıdaki komutlarda iki yolu kendi PC'ne göre değiştir:
+- `DATA` = `drone-tracking-datasets` klasörünün yolu
+- `WORK` = kareler ve önbelleklerin yazılacağı, ~65GB boş yeri olan klasör
+
+Komutları PowerShell'de tek satır olarak yaz (satır sonu `` ` ``); Linux/macOS'ta `\` kullanılır.
 
 ## 1) Kurulum (bir kez)
 
-`code.zip`'i bir klasöre aç, o klasörde terminal aç. Python 3.10+ gerekir
-(bu PC'de 3.12 ile test edildi).
+`code.zip`'i bir klasöre aç, o klasörde terminal aç:
 
-Windows (PowerShell):
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
 pip install -r requirements-lock.txt
 pip install -e .
 ```
-Linux / macOS:
-```bash
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements-lock.txt && pip install -e .
+Linux/macOS: `python3 -m venv .venv && source .venv/bin/activate` sonra aynı iki `pip`.
+
+Bir paket bulunamazsa `pip install -e .` bağımlılıkları kendisi çeker.
+Doğrulama (~1 dk): `pytest -q` → **`68 passed`** görmelisin.
+
+## 2) Hızlı deneme (1-2 dk) — kurulum çalışıyor mu?
+
+Pakette iki küçük önbellek var (`caches/train_13442_23442.npz`,
+`caches/eval_28534_33875.npz`; dataset3'ün bir kısmı). Bunlarla küçük bir koşu:
+
+```powershell
+python -m dronetrackingrl.real_data.experiment train --train-cache caches/train_13442_23442.npz --eval-cache caches/eval_28534_33875.npz --out-dir outputs/smoke --timesteps 3000 --encoder-epochs 1 --random-seeds 1 --ppo-n-steps 512
 ```
-(`requirements-lock.txt` tam sürümleri sabitler. Bir paket senin işletim
-sisteminde bulunamazsa `pip install -e .` bağımlılıkları kendisi çeker.)
+`outputs/smoke/summary.txt` oluşmalı ve hata olmamalı. (Sonuçlar anlamsız, sadece
+kurulumu doğruluyor.)
 
-İsteğe bağlı doğrulama (~1 dk): `pytest -q` → `50 passed` görmelisin.
+## 3) Kareleri çıkar (dataset başına 10-25 dk)
 
-Önbellekleri `caches/` klasörüne koy (repo klasörünün içine).
+Videolar `cam0.z01 … cam0.zip` gibi çok parçalı; standart araçlar açamıyor,
+`prepare` aracı açar ve CRC32 ile doğrular.
 
-## 2) Önce hızlı gözlem-kalitesi kontrolü (saniyeler)
-
+```powershell
+python -m dronetrackingrl.real_data.prepare extract --dataset-dir "DATA\dataset3" --frames-dir "WORK\dataset3_frames" --work-dir "WORK\tmp" --workers 3
+python -m dronetrackingrl.real_data.prepare extract --dataset-dir "DATA\dataset4" --frames-dir "WORK\dataset4_frames" --work-dir "WORK\tmp" --workers 3
 ```
-python -m dronetrackingrl.real_data.experiment inspect-cache caches/train_13442_23442.npz
+- `--workers` = aynı anda kaç kamera. RAM'e göre 2-5 seç (bellek yetmezse düşür).
+- Sonunda **özet** çıkar; her kamera için `N / N kare [OK]` yazmalı:
+  dataset3: 33875, 19960, 17166, 14196, 18900, 28080 kare.
+  dataset4: 31075, 15409, 15678, 10933, 17640, 32016, 11292 kare.
+- `UYUŞMAZLIK` yazarsa o kameranın videosu bozuk inmiş demektir; dataset'i yeniden indir.
+- Yarıda kesilirse **aynı komutu tekrar çalıştır**, tamamlanmış kameraları atlar.
+
+## 4) Önbellek üret (dataset başına ~15-45 dk, en uzun adım)
+
+Kareleri okuyup maskeleme yapar ve küçük bir `.npz`'ye yazar. Kamera başına
+ayrı süreç çalışır; `--parts-dir` sayesinde kesilirse kaldığı yerden devam eder.
+
+```powershell
+python -m dronetrackingrl.real_data.experiment build-cache --sync dataset3 --workers 4 --cameras 0 1 2 3 4 5 --frames-root "WORK\dataset3_frames" --detections-dir "DATA\dataset3\detections" --ref-start 1 --ref-end 33875 --parts-dir "WORK\parts3" --out caches/dataset3_full.npz
+
+python -m dronetrackingrl.real_data.experiment build-cache --sync dataset4 --workers 4 --cameras 0 1 2 3 4 5 6 --frames-root "WORK\dataset4_frames" --detections-dir "DATA\dataset4\detections" --ref-start 1 --ref-end 31075 --parts-dir "WORK\parts4" --out caches/dataset4_full.npz
 ```
-Kamera başına maskelemenin drone'u ne kadar doğru bulduğunu (precision /
-recall, piksel hatası) yazar. Maskeleme `SmallTargetDetector` ile yapıldı
-(gerçek etiketlere karşı doğrulandı: ~%85 isabet, 2-4 piksel konum hatası);
-eski yöntem (ilk kareye göre fark) gerçek çekimde çalışmadığı için terk edildi.
+- Süre: bir kamera ~12 dk (kare hızı ~42/sn). `--workers 4` ile dataset3 ≈ 25 dk,
+  dataset4 ≈ 25 dk. Süreç sayısı kamera sayısına yaklaştıkça hızlanır, ama her süreç
+  ~1GB RAM ister.
+- İlerleme satırları `[camN] önbellek: 5000/33875 kare (… kaldı)` şeklinde akar.
+- **Bellek yetersizliğiyle kesilirse** (uygulama kapanır / "killed"): `--workers`'ı
+  düşürüp **aynı komutu aynen tekrar çalıştır**. Biten kameralar (`parça kaydedildi`)
+  yeniden yapılmaz.
 
-## 3) Koşuyu başlat
+## 5) Kontrol (saniyeler)
 
+```powershell
+python -m dronetrackingrl.real_data.experiment inspect-cache caches/dataset3_full.npz
+python -m dronetrackingrl.real_data.experiment inspect-cache caches/dataset4_full.npz
 ```
-python -m dronetrackingrl.real_data.experiment train \
-  --train-cache caches/train_13442_23442.npz \
-  --eval-cache  caches/eval_28534_33875.npz \
-  --out-dir outputs/run1 \
-  --timesteps 100000 --seeds 0 1 2
+Kamera başına şunlara bak: `precision` ≥ ~0.8 ve `centroid_error_px_median` birkaç
+piksel (2-5). Bu, maskelemenin drone'u gerçekten bulduğunu gösterir. Bir kamerada
+precision çok düşükse (≈ `gt_visible_rate`) veya hata yüzlerce pikselse bana yaz.
+
+## 6) Eğitim
+
+Ortak ayarlar (varsayılanlar zaten doğru): kameradan bağımsız politika
+(`--policy shared`), gözlem standartlaştırma, `--ppo-gamma 0`. `--encoder-epochs 5`
+büyük veride süreyi makul tutar. Her koşu 3 seed (`--seeds 0 1 2`).
+
+**Deney A — sahneler arası (dataset3'te eğit, hiç görmediği dataset4'te test):**
+```powershell
+python -m dronetrackingrl.real_data.experiment train --train-cache caches/dataset3_full.npz --eval-cache caches/dataset4_full.npz --out-dir outputs/A_ds3_to_ds4 --timesteps 200000 --seeds 0 1 2 --encoder-epochs 5
 ```
-(PowerShell'de satır sonu için `\` yerine `` ` `` kullan ya da tek satıra yaz.)
 
-Önerilen (karma eğitim verisi — ajan hem "cam0 hep görünür" hem "cam0 kaybolur"
-bölümlerini görsün; test: hiç görmediği son aralık):
+**Deney B — ters yön (dataset4'te eğit, dataset3'te test):**
+```powershell
+python -m dronetrackingrl.real_data.experiment train --train-cache caches/dataset4_full.npz --eval-cache caches/dataset3_full.npz --out-dir outputs/B_ds4_to_ds3 --timesteps 200000 --seeds 0 1 2 --encoder-epochs 5
 ```
-python -m dronetrackingrl.real_data.experiment train   --train-cache caches/train_13442_23442.npz   --extra-train caches/eval_28534_33875.npz:28534:31500   --eval-cache caches/eval_28534_33875.npz --eval-range 31501 33875   --out-dir outputs/run_mixed --timesteps 60000 --seeds 0 1 2 --ppo-n-steps 1024
+
+**Deney C — karışık (ikisinin de ilk %80'i eğitim, son %20'si ayrı ayrı test):**
+```powershell
+python -m dronetrackingrl.real_data.experiment train --train-cache caches/dataset3_full.npz --train-range 1 27100 --extra-train caches/dataset4_full.npz:1:24860 --eval-cache caches/dataset3_full.npz --eval-range 27101 33875 --extra-eval caches/dataset4_full.npz:24861:31075 --out-dir outputs/C_mixed --timesteps 200000 --seeds 0 1 2 --encoder-epochs 5
 ```
-Ters kat (test = 28534..31500): `--extra-train caches/eval_28534_33875.npz:31501:33875`
-ve `--eval-range 28534 31500`. Varsayılanlar: gözlem standartlaştırma, `--ppo-gamma 0` ve
-`--policy shared` (her kameranın latent'ini aynı ağdan geçiren, kameradan bağımsız
-skorlayıcı; düz MLP için `--policy mlp`). Bunlar olmadan PPO tek kameraya yapışıyor
-ya da eğitimde gördüğü kamera alışkanlıklarını ezberliyor.
+- Sırayla çalıştır (A, sonra B, sonra C); her biri kendi klasörüne yazar.
+- Konsol ve `outputs/<koşu>/run.log` ilerlemeyi gösterir. Süre veri boyutuna
+  bağlı: encoder ön-eğitimi (seed başına) en uzun kısım olabilir; ilk seed'in
+  `PPO eğitimi` satırına geçmesini bekle.
+- Bellek yetmezse: `--encoder-batch-size 128` ve/veya seed'leri ayrı koşularda çalıştır
+  (`--seeds 0`, sonra `--seeds 1` …; farklı `--out-dir`).
 
-Ayarlar: `--timesteps` PPO adım sayısı, `--seeds` her seed ayrı bir eğitim
-(3 seed = sonucun şansa bağlı olup olmadığını görmek için). Konsolda ilerleme
-akar; aynı şey `outputs/run1/run.log`'a da yazılır.
+## 7) Sonucu geri getir
 
-## 4) Çıktıyı geri getir — TEK dosya
+Her koşu bitince `outputs/<koşu>.zip` oluşur (birkaç MB). Üç koşunun zip'ini
+USB / OneDrive / e-posta ile getir, yolunu söyle. İçinde `summary.txt` (özet tablo;
+önce buna bak), `results.json`, `run.log`, seed başına öğrenme eğrisi, adım adım kamera
+seçim kayıtları ve eğitilmiş model var.
 
-Koşu bitince:
-
-```
-outputs/run1.zip
-```
-oluşur (birkaç MB). Bunu USB / OneDrive / e-posta ile bu PC'ye getir ve yolunu
-söylemen yeterli. İçinde:
-
-| Dosya | Ne |
-|---|---|
-| `summary.txt` | İnsan okunur özet tablo (önce buna bak) |
-| `results.json` | Tüm metrikler + gözlem tanıları + config |
-| `run.log` | Koşu günlüğü |
-| `seed_N/progress.csv` | PPO öğrenme eğrisi |
-| `seed_N/trace_train.csv`, `trace_eval.csv` | Adım adım: hangi karede hangi kamera seçildi |
-| `seed_N/ppo_model.zip`, `encoder.pt` | Eğitilmiş model ve encoder |
-
-## Sonucu nasıl okumalı
-
-`summary.txt`'te PPO'nun "görünür oranı"nı şunlarla karşılaştır:
-- **Oracle**: ulaşılabilecek üst sınır
-- **En iyi sabit kamera**: PPO buna yakınsa ajan kamera değiştirmeyi
-  öğrenmemiş, tek kameraya yapışmış demektir
-- **Rastgele**: alt sınır
-
-Asıl güvenilir sayı `eval` (bekletilmiş aralık) satırıdır; `train` satırı
-ezberi de içerebilir.
-
-## Notlar
-
-- Koşu yarıda kesilirse aynı komutu tekrar çalıştır (aynı `--out-dir`
-  üzerine yazar).
-- Önbellekleri yeniden üretmek istersen ham kareler gerekir (yalnızca ilk
-  PC'de var): `python -m dronetrackingrl.real_data.experiment build-cache --help`
+**Sonuç nasıl okunur:** `summary.txt`'te PPO'nun "görünür oranı"nı **Oracle** (üst
+sınır), **en iyi sabit kamera** ve **rastgele** ile karşılaştır. PPO oracle'a yakın ve
+sabit kameradan iyiyse ajan gözlemi kullanarak kamera seçiyor demektir. Asıl güvenilir
+satırlar `eval` (hiç görmediği veri) satırlarıdır, `train` ezberi de içerir.

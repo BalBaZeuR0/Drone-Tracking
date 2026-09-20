@@ -247,3 +247,18 @@ def test_parallel_builder_saves_parts_and_resumes_without_reading_frames(tmp_pat
     )
     np.testing.assert_array_equal(resumed.crops, first.crops)
     np.testing.assert_array_equal(resumed.visible, first.visible)
+
+
+def test_extra_eval_sources_are_reported_and_never_trained_on(tmp_path):
+    cache_path = tmp_path / "c.npz"
+    _cam0_cache().save(cache_path)
+    results = run_experiment(
+        ExperimentConfig(
+            train_cache=str(cache_path), train_range=(1, 2),
+            extra_eval=[(str(cache_path), 2, 3)], out_dir=str(tmp_path / "run"),
+            timesteps=64, seeds=[0], latent_dim=LATENT_DIM, encoder_epochs=1,
+            ppo_n_steps=64, ppo_batch_size=64, random_seeds=1, pack=False,
+        )
+    )
+    assert set(results["splits"]) == {"train", "eval_extra1"}
+    assert results["splits"]["eval_extra1"]["ref_start"] == 2

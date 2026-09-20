@@ -553,6 +553,7 @@ class ExperimentConfig:
     pack: bool = True
     train_range: Optional[Tuple[int, int]] = None  # önbelleğin alt aralığı
     extra_train: List[Tuple[str, int, int]] = field(default_factory=list)  # (önbellek, başlangıç, bitiş)
+    extra_eval: List[Tuple[str, int, int]] = field(default_factory=list)   # ek test kaynakları
     eval_range: Optional[Tuple[int, int]] = None
 
 
@@ -600,6 +601,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
         caches["eval"] = eval_cache.slice(*config.eval_range) if config.eval_range else eval_cache
     for k, (path, a, b) in enumerate(config.extra_train, start=1):
         caches[f"train_extra{k}"] = SignalCache.load(path).slice(a, b)
+    for k, (path, a, b) in enumerate(config.extra_eval, start=1):
+        caches[f"eval_extra{k}"] = SignalCache.load(path).slice(a, b)
     for name, cache in caches.items():
         logger.info("%s önbelleği: ref_frame %d..%d, kameralar %s", name, cache.ref_start, cache.ref_end, cache.cameras)
     # Kamera sayısı kaynaklara göre değişebilir (dataset3: 6, dataset4: 7) -> en
@@ -740,6 +743,8 @@ def main(argv=None) -> None:
     train.add_argument("--eval-cache")
     train.add_argument("--extra-train", nargs="+", metavar="ÖNBELLEK:BAŞLANGIÇ:BİTİŞ", default=[],
                        help="ek eğitim kaynakları (ör. caches/eval.npz:28534:31500); her bölümde dönüşümlü kullanılır")
+    train.add_argument("--extra-eval", nargs="+", metavar="ÖNBELLEK:BAŞLANGIÇ:BİTİŞ", default=[],
+                       help="ek test kaynakları (eğitimde HİÇ kullanılmaz); her biri ayrı raporlanır")
     train.add_argument("--train-range", type=int, nargs=2, metavar=("START", "END"),
                        help="eğitim önbelleğinin alt aralığı (ref_frame)")
     train.add_argument("--eval-range", type=int, nargs=2, metavar=("START", "END"),
@@ -791,6 +796,7 @@ def main(argv=None) -> None:
                 random_seeds=args.random_seeds, pack=not args.no_pack,
                 train_range=tuple(args.train_range) if args.train_range else None,
                 extra_train=[(p, int(a), int(b)) for p, a, b in (spec.rsplit(':', 2) for spec in args.extra_train)],
+                extra_eval=[(p, int(a), int(b)) for p, a, b in (spec.rsplit(':', 2) for spec in args.extra_eval)],
                 eval_range=tuple(args.eval_range) if args.eval_range else None,
             )
         )
