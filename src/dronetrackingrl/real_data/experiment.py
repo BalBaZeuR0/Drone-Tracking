@@ -309,6 +309,51 @@ def build_signal_cache_parallel(
     return merged
 
 
+# Gözlem modları: "latent" = sadece encoder latent'i; "latent+aux" = latent + geçmiş
+# karelere bakan (nedensel) dedektör özellikleri; "gt" = ground-truth görünürlük
+# (SADECE üst-sınır/sağlamlık ablasyonu, gerçek bir gözlem değil).
+OBS_MODES = ("latent", "latent+aux", "gt")
+AUX_FEATURE_DIM = 5  # ateşledi, tepe gücü, iz uzunluğu, son-30-kare ateşleme oranı, kayıtta
+GT_FEATURE_DIM = 2   # görünür, kayıtta
+TRACK_MAX_JUMP_PX = 20.0  # bu kadar piksel içindeki ardışık tespitler aynı izdir
+TRACK_CAP = 30
+RATE_WINDOW = 30
+
+
+def obs_feature_dim(obs_mode: str, latent_dim: int) -> int:
+    """Kamera başına gözlem uzunluğu (ortamın ve politikanın 'latent_dim'i)."""
+    if obs_mode not in OBS_MODES:
+        raise ValueError(f"Bilinmeyen gözlem modu: {obs_mode!r} (seçenekler: {OBS_MODES})")
+    return {"latent": latent_dim, "latent+aux": latent_dim + AUX_FEATURE_DIM, "gt": GT_FEATURE_DIM}[obs_mode]
+
+
+def derive_camera_features(cache: SignalCache) -> np.ndarray:
+    """Önbellekten kamera başına NEDENSEL (sadece geçmiş/şimdiki kareler) özellikler,
+    ``(n, kamera, AUX_FEATURE_DIM)``: [ateşledi, tepe gücü, iz uzunluğu, ateşleme
+    oranı, kayıtta]. Gerçek drone birkaç karede tutarlı bir iz bırakır, yanlış alarm
+    sıçrar; tek karelik bir kırpım bunu söyleyemez, bu özellikler söyler."""
+    n, k = cache.recording.shape
+    fired = ~np.isnan(cache.mask_pixel[..., 0])
+    peak = cache.crops.reshape(n, k, -1).max(axis=2).astype(np.float32) / 255.0
+
+    track = np.zeros((n, k), dtype=np.float32)
+    run = np.zeros(k)
+    previous = np.full((k, 2), np.nan)
+    for i in range(n):
+        position = cache.mask_pixel[i]
+        consistent = fired[i] & (np.linalg.norm(position - previous, axis=1) <= TRACK_MAX_JUMP_PX)
+        run = np.where(fired[i], np.where(consistent, run + 1, 1), 0)
+        track[i] = np.minimum(run, TRACK_CAP) / TRACK_CAP
+        previous = np.where(fired[i][:, None], position, np.nan)  # kayıp izi bitirir
+
+    cumulative = np.concatenate([np.zeros((1, k)), np.cumsum(fired.astype(np.float64), axis=0)])
+    index = np.arange(n)
+    start = np.maximum(0, index + 1 - RATE_WINDOW)
+    rate = ((cumulative[index + 1] - cumulative[start]) / (index + 1 - start)[:, None]).astype(np.float32)
+
+    return np.stack([fired.astype(np.float32), peak, track, rate, cache.recording.astype(np.float32)], axis=2)
+
+
 class CachedSignalProvider:
     """CameraSignalProvider: RealCameraSignalProvider ile aynı sinyal, ama
     kare okumadan, önbellekten. ``encoder=None`` ise gözlem sıfır vektörüdür
@@ -320,10 +365,13 @@ class CachedSignalProvider:
         encoder: Optional[MaskedCropAutoencoder],
         latent_dim: int,
         latent_stats: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+        obs_mode: str = "latent",
     ):
         self.cache = cache
         self.encoder = encoder
-        self.latent_dim = latent_dim
+        self.obs_mode = obs_mode
+        self.latent_dim = obs_feature_dim(obs_mode, latent_dim)  # ortamın gördüğü kamera-başı uzunluk
+        self._aux = derive_camera_features(cache) if obs_mode == "latent+aux" else None
         self.latent_stats = latent_stats  # (ortalama, std): gözlemi standartlaştırır
         self.num_cameras = len(cache.cameras)
         self._ref_frame = cache.ref_start
@@ -339,7 +387,9 @@ class CachedSignalProvider:
 
     def signals_for_ref_frame(self, ref_frame: int) -> List[CameraStepSignal]:
         i = ref_frame - self.cache.ref_start
-        if self.encoder is None:
+        if self.obs_mode == "gt":
+            latents = np.stack([self.cache.visible[i], self.cache.recording[i]], axis=1).astype(np.float32)
+        elif self.encoder is None:
             latents = np.zeros((self.num_cameras, self.latent_dim), dtype=np.float32)
         else:
             batch = torch.from_numpy(self.cache.crops[i].astype(np.float32) / 255.0).unsqueeze(1)
@@ -348,6 +398,8 @@ class CachedSignalProvider:
             if self.latent_stats is not None:
                 mean, std = self.latent_stats
                 latents = ((latents - mean) / std).astype(np.float32)
+            if self._aux is not None:
+                latents = np.concatenate([latents, self._aux[i]], axis=1)
         signals = []
         for j in range(self.num_cameras):
             px = self.cache.mask_pixel[i, j]
@@ -433,11 +485,13 @@ def compute_latent_stats(encoder: MaskedCropAutoencoder, cache, batch_size: int 
 # --------------------------------------------------------------------------
 # Değerlendirme
 # --------------------------------------------------------------------------
-def run_episode(cache: SignalCache, encoder, latent_dim: int, policy=None, model=None, latent_stats=None) -> List[dict]:
+def run_episode(
+    cache: SignalCache, encoder, latent_dim: int, policy=None, model=None, latent_stats=None, obs_mode: str = "latent"
+) -> List[dict]:
     """Bir bölüm (tüm önbellek aralığı) çalıştırır. Her adım için: hangi kare
     (ref_frame) için hangi kamera seçildi, seçilen görünür müydü, en az bir
     kamera görünür müydü, ve her kameranın görünürlüğü."""
-    env = CameraSwitchEnv(CachedSignalProvider(cache, encoder, latent_dim, latent_stats))
+    env = CameraSwitchEnv(CachedSignalProvider(cache, encoder, latent_dim, latent_stats, obs_mode))
     obs, info = env.reset()
     ref_frame = cache.ref_start
     rows: List[dict] = []
@@ -549,6 +603,7 @@ class ExperimentConfig:
     ppo_ent_coef: float = 0.0
     normalize_latents: bool = True
     policy: str = "shared"  # "shared" (kameradan bağımsız skorlayıcı) veya "mlp" (düz MLP)
+    obs_mode: str = "latent"  # OBS_MODES: "latent", "latent+aux" (nedensel dedektör özellikleri), "gt" (ablasyon)
     random_seeds: int = 5
     pack: bool = True
     train_range: Optional[Tuple[int, int]] = None  # önbelleğin alt aralığı
@@ -565,7 +620,8 @@ def _write_trace(path: Path, rows: List[dict]) -> None:
 
 
 def _format_summary(results: dict) -> str:
-    lines = [f"Deney: {results['config']['out_dir']}", f"Toplam süre: {results['elapsed_seconds']:.0f}s", ""]
+    lines = [f"Deney: {results['config']['out_dir']}", f"Gözlem modu: {results['config']['obs_mode']}",
+             f"Toplam süre: {results['elapsed_seconds']:.0f}s", ""]
     for split, info in results["splits"].items():
         lines.append(f"=== {split.upper()} (ref_frame {info['ref_start']}..{info['ref_end']}, {info['steps']} adım) ===")
         base = results["baselines"][split]
@@ -593,6 +649,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s", handlers=handlers, force=True)
 
     started = time.time()
+    feature_dim = obs_feature_dim(config.obs_mode, config.latent_dim)  # geçersiz mod burada, eğitimden önce patlar
     caches = {"train": SignalCache.load(config.train_cache)}
     if config.train_range:
         caches["train"] = caches["train"].slice(*config.train_range)
@@ -661,7 +718,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
         vec_env = make_vec_env(
             lambda: CameraSwitchEnv(
                 RotatingProvider(
-                    [CachedSignalProvider(c, encoder, config.latent_dim, latent_stats) for c in padded_train_caches]
+                    [CachedSignalProvider(c, encoder, config.latent_dim, latent_stats, config.obs_mode)
+                     for c in padded_train_caches]
                 )
             ),
             n_envs=1,
@@ -669,9 +727,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
         if config.policy == "shared":
             from dronetrackingrl.real_data.policy import SharedCameraPolicy
 
-            policy, policy_kwargs = SharedCameraPolicy, dict(
-                num_cameras=num_cameras, latent_dim=config.latent_dim
-            )
+            policy, policy_kwargs = SharedCameraPolicy, dict(num_cameras=num_cameras, latent_dim=feature_dim)
         elif config.policy == "mlp":
             policy, policy_kwargs = "MlpPolicy", {}
         else:
@@ -693,7 +749,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
                "encoder_loss_last": losses[-1] if losses else None,
                "train_seconds": time.time() - train_started, "splits": {}}
         for name, cache in padded.items():
-            rows = run_episode(cache, encoder, config.latent_dim, model=model, latent_stats=latent_stats)
+            rows = run_episode(cache, encoder, config.latent_dim, model=model, latent_stats=latent_stats,
+                               obs_mode=config.obs_mode)
             _write_trace(seed_dir / f"trace_{name}.csv", rows)
             run["splits"][name] = summarize_rows(rows, cache.cameras)
             logger.info("seed %d %s: görünür oranı %.4f, kamera payı %s",
@@ -759,6 +816,9 @@ def main(argv=None) -> None:
     train.add_argument("--ppo-batch-size", type=int, default=64)
     train.add_argument("--policy", choices=["shared", "mlp"], default="shared",
                        help="shared: kameradan bağımsız skorlayıcı (varsayılan); mlp: düz MLP")
+    train.add_argument("--obs-mode", choices=list(OBS_MODES), default="latent",
+                       help="latent: sadece encoder; latent+aux: + nedensel dedektör özellikleri (iz uzunluğu, "
+                            "ateşleme oranı...); gt: ground-truth görünürlük (sadece üst-sınır ablasyonu)")
     train.add_argument("--ppo-lr", type=float, default=3e-4)
     train.add_argument("--ppo-ent-coef", type=float, default=0.0)
     train.add_argument("--no-normalize-latents", action="store_true", help="Gözlem standartlaştırmasını kapat")
@@ -792,7 +852,7 @@ def main(argv=None) -> None:
                 timesteps=args.timesteps, seeds=args.seeds, latent_dim=args.latent_dim,
                 encoder_epochs=args.encoder_epochs, encoder_batch_size=args.encoder_batch_size,
                 ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size, ppo_gamma=args.ppo_gamma, ppo_lr=args.ppo_lr, ppo_ent_coef=args.ppo_ent_coef,
-                normalize_latents=not args.no_normalize_latents, policy=args.policy,
+                normalize_latents=not args.no_normalize_latents, policy=args.policy, obs_mode=args.obs_mode,
                 random_seeds=args.random_seeds, pack=not args.no_pack,
                 train_range=tuple(args.train_range) if args.train_range else None,
                 extra_train=[(p, int(a), int(b)) for p, a, b in (spec.rsplit(':', 2) for spec in args.extra_train)],
