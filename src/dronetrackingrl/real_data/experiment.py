@@ -65,7 +65,9 @@ class SignalCache:
         return self.ref_end - self.ref_start + 1
 
     def slice(self, ref_start: int, ref_end: int) -> "SignalCache":
-        """[ref_start, ref_end] alt aralığı (önbelleğin içinde olmalı)."""
+        """[ref_start, ref_end] alt aralığı (önbelleğin içinde olmalı). Dilimler KOPYALANIR:
+        görünüm olsaydı her alt aralık bütün ana diziyi bellekte tutardı (aynı önbellekten
+        çok sayıda aralık kullanan koşularda ~10 GB'a çıkıyordu)."""
         if not (self.ref_start <= ref_start < ref_end <= self.ref_end):
             raise ValueError(
                 f"Aralık [{ref_start}, {ref_end}] önbellek aralığı [{self.ref_start}, {self.ref_end}] içinde değil"
@@ -74,8 +76,8 @@ class SignalCache:
         return SignalCache(
             cameras=list(self.cameras), reference_camera=self.reference_camera,
             ref_start=ref_start, ref_end=ref_end, crop_size=self.crop_size,
-            crops=self.crops[a:b], recording=self.recording[a:b], visible=self.visible[a:b],
-            mask_pixel=self.mask_pixel[a:b], gt_pixel=self.gt_pixel[a:b],
+            crops=self.crops[a:b].copy(), recording=self.recording[a:b].copy(), visible=self.visible[a:b].copy(),
+            mask_pixel=self.mask_pixel[a:b].copy(), gt_pixel=self.gt_pixel[a:b].copy(),
         )
 
     def save(self, path) -> None:

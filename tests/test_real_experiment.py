@@ -136,6 +136,13 @@ def test_slice_returns_matching_subrange():
     np.testing.assert_array_equal(part.visible, cache.visible[1:3])
 
 
+def test_slice_owns_its_memory_so_the_full_cache_can_be_freed():
+    cache = _cam0_cache()
+    part = cache.slice(2, 3)
+    for name in ("crops", "recording", "visible", "mask_pixel", "gt_pixel"):
+        assert not np.shares_memory(getattr(part, name), getattr(cache, name)), name
+
+
 def test_slice_rejects_range_outside_cache():
     import pytest
 
