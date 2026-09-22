@@ -80,6 +80,22 @@ bir kazanım. Not: eğitim-içi bir bölgede (ds3 30201–33875, held-out değil
 C hem C_hist sabit kameranın altında kalıyor (78,3 → 73,9) — önceden beri var,
 bu değişiklikle ilgisi yok, ayrı bir konu.
 
+### C_hist görselleri (seed 0)
+
+**Yörünge + kamera seçimi** — solda cam0 arka planında gerçek 2D piksel yörüngesi
+(zamanla renklendirilmiş), sağda hangi kameraların o an drone'u gördüğü (gri) ile
+ajanın hangisini seçtiği (turuncu) aynı zaman ekseninde. Turuncu şeritlerin uzun ve
+kesintisiz olması, geçiş sayısının 28-118× azaldığını gözle doğruluyor.
+
+![Yörünge ve kamera seçimi](docs/figures/dataset3_dataset4_yorunge_ve_kamera_secimi.png)
+
+**Ground-truth'a göre doğruluk** — 500 karelik kayan pencerede görünür oranı: PPO
+(turuncu) vs oracle/üst sınır (yeşil dolgu) vs sabit cam0 (lacivert), sadece gerçek
+etiketten. Gri bantlar eğitimde hiç görülmemiş test bölgeleri. dataset3'ün sonundaki
+(~30000-34000) zayıf bölge (bkz. TRAIN_EXTRA2 notu yukarıda) burada gözle görülüyor.
+
+![Ground-truth doğruluk karşılaştırması](docs/figures/ground_truth_dogruluk_karsilastirmasi.png)
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
