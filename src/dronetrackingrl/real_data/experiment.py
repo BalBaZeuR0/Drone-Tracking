@@ -37,7 +37,7 @@ from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
 from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider, default_frame_reader
 from dronetrackingrl.real_data.sync import DATASET3, SYNC_TABLES, SyncTable, is_recording, mapped_frame
 from dronetrackingrl.real_data.training import load_detections
-from dronetrackingrl.rl_env.camera_switch_env import CameraSwitchEnv
+from dronetrackingrl.rl_env.camera_switch_env import OWN_HISTORY_DIM, CameraSwitchEnv
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
 
 CACHE_VERSION = 2  # v2: maskeleme SmallTargetDetector (kırpım = blackhat tepkisi, blob merkezi ham piksel)
@@ -488,12 +488,16 @@ def compute_latent_stats(encoder: MaskedCropAutoencoder, cache, batch_size: int 
 # Değerlendirme
 # --------------------------------------------------------------------------
 def run_episode(
-    cache: SignalCache, encoder, latent_dim: int, policy=None, model=None, latent_stats=None, obs_mode: str = "latent"
+    cache: SignalCache, encoder, latent_dim: int, policy=None, model=None, latent_stats=None, obs_mode: str = "latent",
+    switch_penalty: float = 0.0, include_own_history: bool = False,
 ) -> List[dict]:
     """Bir bölüm (tüm önbellek aralığı) çalıştırır. Her adım için: hangi kare
     (ref_frame) için hangi kamera seçildi, seçilen görünür müydü, en az bir
     kamera görünür müydü, ve her kameranın görünürlüğü."""
-    env = CameraSwitchEnv(CachedSignalProvider(cache, encoder, latent_dim, latent_stats, obs_mode))
+    env = CameraSwitchEnv(
+        CachedSignalProvider(cache, encoder, latent_dim, latent_stats, obs_mode),
+        switch_penalty=switch_penalty, include_own_history=include_own_history,
+    )
     obs, info = env.reset()
     ref_frame = cache.ref_start
     rows: List[dict] = []
@@ -606,6 +610,8 @@ class ExperimentConfig:
     normalize_latents: bool = True
     policy: str = "shared"  # "shared" (kameradan bağımsız skorlayıcı) veya "mlp" (düz MLP)
     obs_mode: str = "latent"  # OBS_MODES: "latent", "latent+aux" (nedensel dedektör özellikleri), "gt" (ablasyon)
+    switch_penalty: float = 0.0  # kamera değiştirince ödülden düşülen miktar (gereksiz sık geçişi caydırmak için)
+    include_own_history: bool = False  # gözleme ajanın kendi son seçimini + o kamerada kaç adımdır kaldığını ekler
     random_seeds: int = 5
     pack: bool = True
     train_range: Optional[Tuple[int, int]] = None  # önbelleğin alt aralığı
@@ -623,6 +629,8 @@ def _write_trace(path: Path, rows: List[dict]) -> None:
 
 def _format_summary(results: dict) -> str:
     lines = [f"Deney: {results['config']['out_dir']}", f"Gözlem modu: {results['config']['obs_mode']}",
+             f"Geçiş cezası: {results['config']['switch_penalty']}",
+             f"Kendi geçmişi: {'açık' if results['config']['include_own_history'] else 'kapalı'}",
              f"Toplam süre: {results['elapsed_seconds']:.0f}s", ""]
     for split, info in results["splits"].items():
         lines.append(f"=== {split.upper()} (ref_frame {info['ref_start']}..{info['ref_end']}, {info['steps']} adım) ===")
@@ -652,6 +660,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
 
     started = time.time()
     feature_dim = obs_feature_dim(config.obs_mode, config.latent_dim)  # geçersiz mod burada, eğitimden önce patlar
+    if config.include_own_history:
+        feature_dim += OWN_HISTORY_DIM
     caches = {"train": SignalCache.load(config.train_cache)}
     if config.train_range:
         caches["train"] = caches["train"].slice(*config.train_range)
@@ -722,7 +732,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
                 RotatingProvider(
                     [CachedSignalProvider(c, encoder, config.latent_dim, latent_stats, config.obs_mode)
                      for c in padded_train_caches]
-                )
+                ),
+                switch_penalty=config.switch_penalty, include_own_history=config.include_own_history,
             ),
             n_envs=1,
         )
@@ -752,7 +763,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
                "train_seconds": time.time() - train_started, "splits": {}}
         for name, cache in padded.items():
             rows = run_episode(cache, encoder, config.latent_dim, model=model, latent_stats=latent_stats,
-                               obs_mode=config.obs_mode)
+                               obs_mode=config.obs_mode, switch_penalty=config.switch_penalty,
+                               include_own_history=config.include_own_history)
             _write_trace(seed_dir / f"trace_{name}.csv", rows)
             run["splits"][name] = summarize_rows(rows, cache.cameras)
             logger.info("seed %d %s: görünür oranı %.4f, kamera payı %s",
@@ -821,6 +833,10 @@ def main(argv=None) -> None:
     train.add_argument("--obs-mode", choices=list(OBS_MODES), default="latent",
                        help="latent: sadece encoder; latent+aux: + nedensel dedektör özellikleri (iz uzunluğu, "
                             "ateşleme oranı...); gt: ground-truth görünürlük (sadece üst-sınır ablasyonu)")
+    train.add_argument("--switch-penalty", type=float, default=0.0,
+                       help="kamera değiştirince ödülden düşülen miktar (gereksiz sık geçişi caydırmak için)")
+    train.add_argument("--include-own-history", action="store_true",
+                       help="gözleme ajanın kendi son seçimini + o kamerada kaç adımdır kaldığını ekler")
     train.add_argument("--ppo-lr", type=float, default=3e-4)
     train.add_argument("--ppo-ent-coef", type=float, default=0.0)
     train.add_argument("--no-normalize-latents", action="store_true", help="Gözlem standartlaştırmasını kapat")
@@ -855,6 +871,7 @@ def main(argv=None) -> None:
                 encoder_epochs=args.encoder_epochs, encoder_batch_size=args.encoder_batch_size,
                 ppo_n_steps=args.ppo_n_steps, ppo_batch_size=args.ppo_batch_size, ppo_gamma=args.ppo_gamma, ppo_lr=args.ppo_lr, ppo_ent_coef=args.ppo_ent_coef,
                 normalize_latents=not args.no_normalize_latents, policy=args.policy, obs_mode=args.obs_mode,
+                switch_penalty=args.switch_penalty, include_own_history=args.include_own_history,
                 random_seeds=args.random_seeds, pack=not args.no_pack,
                 train_range=tuple(args.train_range) if args.train_range else None,
                 extra_train=[(p, int(a), int(b)) for p, a, b in (spec.rsplit(':', 2) for spec in args.extra_train)],

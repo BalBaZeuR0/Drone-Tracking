@@ -114,3 +114,25 @@ def test_run_experiment_supports_obs_modes(tmp_path, obs_mode):
     )
     assert results["config"]["obs_mode"] == obs_mode
     assert "eval" in results["ppo"]["0"]["splits"]
+
+
+def test_run_experiment_supports_own_history_and_switch_penalty(tmp_path):
+    rng = np.random.default_rng(0)
+    n, k = 40, 3
+    cache = SignalCache(
+        cameras=list(range(k)), reference_camera=0, ref_start=1, ref_end=n, crop_size=64,
+        crops=np.zeros((n, k, 64, 64), dtype=np.uint8), recording=np.ones((n, k), dtype=bool),
+        visible=rng.random((n, k)) > 0.4, mask_pixel=np.full((n, k, 2), np.nan), gt_pixel=np.full((n, k, 2), np.nan),
+    )
+    path = tmp_path / "c.npz"
+    cache.save(path)
+    results = run_experiment(
+        ExperimentConfig(
+            train_cache=str(path), eval_cache=str(path), out_dir=str(tmp_path / "run"), timesteps=64, seeds=[0],
+            latent_dim=LATENT_DIM, encoder_epochs=1, ppo_n_steps=64, ppo_batch_size=64, random_seeds=1, pack=False,
+            obs_mode="latent+aux", include_own_history=True, switch_penalty=0.2,
+        )
+    )
+    assert results["config"]["include_own_history"] is True
+    assert results["config"]["switch_penalty"] == 0.2
+    assert "eval" in results["ppo"]["0"]["splits"]
