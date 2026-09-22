@@ -28,6 +28,7 @@ sınır · `latent` = sadece encoder çıktısı · `latent+aux` = + 5 nedensel 
 | C | karışık (ds3+ds4) | latent+aux | ds3+ds4'ün ~%80'i (4 blok halinde) | 4 ortak held-out bölge | aşağıda | ✅ **en tutarlı** |
 | C3 | sadece ds3 | latent+aux | sadece dataset3 | aynı 4 bölge | aşağıda | ⚠️ **cross-scene'de bir bölgede başarısız** |
 | C4 | sadece ds4 | latent+aux | sadece dataset4 | aynı 4 bölge | aşağıda | ✅ iyi |
+| C_hist | karışık + kendi geçmişi + geçiş cezası | latent+aux | ds3+ds4 (C ile aynı) | aynı 4 bölge | aşağıda | ✅ **geçiş sayısı 28-118× azaldı, doğruluk aynı/daha iyi** |
 
 ## C / C3 / C4 — karışık eğitim gerçekten yardımcı oluyor mu? (2026-09-21, 3 tohum)
 
@@ -54,6 +55,30 @@ maliyeti yok gibi görünüyor.
 100,0 — kamera değiştirmenin gerçekten önemli olduğu bir bölge) ve PPO üç
 yapılandırmada da neredeyse tavana ulaşıyor (99,4–99,9). Kamera değiştirmenin işe
 yaradığı yerde ajan bunu gerçekten yapıyor.
+
+## C_hist — kendi geçmişi + geçiş cezası (2026-09-22, 3 tohum)
+
+Gözlemlenen sorun: ajan çok sık kamera değiştiriyordu (ör. A'da ~her 2,8 karede
+bir) — muhtemelen dedektörün kare-kare titremesine tepki, gerçek durum
+değişikliğine değil. İki ekleme yapıldı: **kendi geçmişi** (gözleme "bu kamerayı
+az önce seçtim mi" + "kaç adımdır bu kamerada kaldım" eklenir) ve **geçiş
+cezası** (kamera değiştirince ödülden 0,1 düşülür, sadece eğitimi etkiler).
+`C_hist` = C ile birebir aynı karışık eğitim (ds3+ds4) + bu iki özellik.
+
+| Bölge | Sabit | C (önce) | **C_hist** | Oracle | Geçiş sayısı: C → C_hist |
+|---|---|---|---|---|---|
+| ds3 12001–14000 | 83,7 | 86,7 | 86,3 ± 1,5 | 94,7 | ~438 → ~12 |
+| ds3 28001–30000 | 65,8 | 99,5 | 99,4 ± 0,3 | 100,0 | ~628 → ~5 |
+| ds4 5001–10000 | 76,5 | 85,4 | 85,4 ± 0,4 | 95,1 | ~973 → ~35 |
+| ds4 16001–18000 | 90,2 | 94,8 | **98,3 ± 0,3** | 100,0 | ~518 → ~11 |
+
+**Sonuç: ✅ net kazanım.** Geçiş sayısı 4 bölgede de 28-118 kat azaldı (artık
+~150-380 karede bir değişiyor, önceden 3-5 karede bir). `visible_rate` 3
+bölgede tohum sapması içinde aynı, 1 bölgede belirgin iyileşme (94,8 → 98,3,
+oracle farkının %67'si kapandı). Hiçbir held-out bölge kötüleşmedi — bedelsiz
+bir kazanım. Not: eğitim-içi bir bölgede (ds3 30201–33875, held-out değil) hem
+C hem C_hist sabit kameranın altında kalıyor (78,3 → 73,9) — önceden beri var,
+bu değişiklikle ilgisi yok, ayrı bir konu.
 
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
