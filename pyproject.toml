@@ -8,6 +8,7 @@ dependencies = [
     "gymnasium>=0.29",
     "stable-baselines3>=2.3",
     "torch>=2.2",
+    "rlpanel[sb3] @ git+https://github.com/BalBaZeuR0/RLpanel",
 ]
 
 [project.optional-dependencies]

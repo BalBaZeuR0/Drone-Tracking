@@ -269,3 +269,53 @@ def test_extra_eval_sources_are_reported_and_never_trained_on(tmp_path):
     )
     assert set(results["splits"]) == {"train", "eval_extra1"}
     assert results["splits"]["eval_extra1"]["ref_start"] == 2
+
+
+def test_run_experiment_streams_each_seed_to_rlpanel(tmp_path, monkeypatch):
+    import dronetrackingrl.real_data.experiment as experiment
+
+    created = []
+
+    class FakePanel:
+        def __init__(self, project, run, **kwargs):
+            self.project, self.run, self.kwargs = project, run, kwargs
+            self.config = kwargs.get("config")
+            self.logged, self.results, self.status = [], {}, None
+            created.append(self)
+
+        def log(self, metrics, step):
+            self.logged.append((dict(metrics), step))
+
+        def log_text(self, line, level="INFO"):
+            pass
+
+        def progress(self, current_step, total_steps=None):
+            pass
+
+        def set_config(self, config):
+            pass
+
+        def result(self, results):
+            self.results.update(results)
+
+        def finish(self, status="finished"):
+            self.status = status
+
+    monkeypatch.setattr(experiment, "Panel", FakePanel)
+    # fixture önbelleğinde drone kırpımı yok -> gerçek ön-eğitim [] döndürür; kayıp akışını görmek için sabitle
+    monkeypatch.setattr(experiment, "pretrain_encoder", lambda *a, **k: [0.5, 0.25])
+    cache_path = tmp_path / "train.npz"
+    _cam0_cache().save(cache_path)
+    run_experiment(ExperimentConfig(
+        train_cache=str(cache_path), eval_cache=str(cache_path), out_dir=str(tmp_path / "run"),
+        timesteps=64, seeds=[0, 1], latent_dim=LATENT_DIM, encoder_epochs=2, ppo_n_steps=64,
+        ppo_batch_size=64, random_seeds=2, pack=False,
+    ))
+    assert [p.run for p in created] == ["run/seed_0", "run/seed_1"]
+    first = created[0]
+    assert first.project == "DroneTrackingRL" and first.kwargs["seed"] == 0
+    assert first.kwargs["config"]["timesteps"] == 64
+    assert [step for metrics, step in first.logged if "encoder/loss" in metrics] == [0, 1]
+    assert any("eval/eval/visible_rate" in metrics for metrics, _ in first.logged)
+    assert first.results["splits"]["train"]["visible_rate"] == 1.0
+    assert first.status == "finished"

@@ -31,6 +31,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import torch
+from rlpanel import Panel, PanelCallback
 
 from dronetrackingrl.baselines.policies import FixedCameraPolicy, OraclePolicy, RandomPolicy
 from dronetrackingrl.encoder.autoencoder import MaskedCropAutoencoder
@@ -716,6 +717,9 @@ def run_experiment(config: ExperimentConfig) -> dict:
     for seed in config.seeds:
         seed_dir = out_dir / f"seed_{seed}"
         seed_dir.mkdir(exist_ok=True)
+        # Canlı panel (rlpanel): terminal çıktısı, PPO metrikleri ve sonuçlar tarayıcıda.
+        panel = Panel(project="DroneTrackingRL", run=f"{out_dir.name}/seed_{seed}", seed=seed,
+                      config={**asdict(config), "seed": seed}, total_steps=config.timesteps, run_dir=seed_dir)
         logger.info("--- seed %d: encoder ön-eğitimi ---", seed)
         torch.manual_seed(seed)
         encoder = MaskedCropAutoencoder(crop_size=train_cache.crop_size, latent_dim=config.latent_dim)
@@ -724,6 +728,8 @@ def run_experiment(config: ExperimentConfig) -> dict:
         )
         if losses:
             logger.info("encoder kaybı: %.5f -> %.5f", losses[0], losses[-1])
+        for epoch, loss in enumerate(losses):
+            panel.log({"encoder/loss": loss}, step=epoch)
 
         latent_stats = compute_latent_stats(encoder, train_caches) if config.normalize_latents else None
         logger.info("--- seed %d: PPO eğitimi (%d adım) ---", seed, config.timesteps)
@@ -752,7 +758,7 @@ def run_experiment(config: ExperimentConfig) -> dict:
         )
         model.set_logger(configure(str(seed_dir), ["stdout", "csv"]))
         train_started = time.time()
-        model.learn(total_timesteps=config.timesteps)
+        model.learn(total_timesteps=config.timesteps, callback=PanelCallback(panel))
         model.save(str(seed_dir / "ppo_model"))
         torch.save(encoder.state_dict(), seed_dir / "encoder.pt")
         if latent_stats is not None:
@@ -769,7 +775,12 @@ def run_experiment(config: ExperimentConfig) -> dict:
             run["splits"][name] = summarize_rows(rows, cache.cameras)
             logger.info("seed %d %s: görünür oranı %.4f, kamera payı %s",
                         seed, name, run["splits"][name]["visible_rate"], run["splits"][name]["camera_share"])
+            split = run["splits"][name]
+            panel.log({f"eval/{name}/visible_rate": split["visible_rate"], f"eval/{name}/switches": split["switches"]},
+                      step=model.num_timesteps)
         results["ppo"][str(seed)] = run
+        panel.result(run)
+        panel.finish()
 
     results["elapsed_seconds"] = time.time() - started
     with open(out_dir / "results.json", "w", encoding="utf-8") as handle:
