@@ -72,6 +72,43 @@ def test_reset_restarts_warmup():
     assert not detector.update(frame).visible
 
 
+def test_suppresses_a_static_source_that_keeps_firing_at_the_same_spot():
+    # Gerçek dataset4/cam6 hatasının üretimi: konumu SABİT ama şiddeti dalgalanan
+    # bir kontrast kenarı (gökyüzü karşısındaki anten gibi) -- "ardışık karede
+    # yakınlık" kontrolünü her zaman geçer, çünkü hiç kıpırdamaz. Sabit DEĞERLİ
+    # noktaları test eden test_ignores_slow_brightness_drift_and_static_dark_specks
+    # bunu yakalamaz, çünkü arka plan modeli sabit bir değere tam yakınsar.
+    detector = SmallTargetDetector(crop_size=32, static_suppress_count=50)
+    results = []
+    for t in range(400):
+        frame = _sky(200, 300, brightness=0.5 * t)
+        value = 40 + int(20 * np.sin(t * 0.7))  # aynı yerde dalgalanan şiddet
+        _draw_dot(frame, 80, 60, 2, value)
+        results.append(detector.update(frame))
+
+    early_hits = sum(1 for r in results[20:70] if r.visible)
+    late_hits = sum(1 for r in results[300:400] if r.visible)
+    assert early_hits > 10  # eşiği geçmeden önce tekrar tekrar tespit ediliyor
+    assert late_hits == 0  # eşiği geçtikten (dalgalanma yüzünden aralıklı sayılsa da) sonra tamamen bastırılıyor
+
+
+def test_static_suppression_does_not_affect_a_genuinely_moving_target():
+    detector = SmallTargetDetector(crop_size=32, static_suppress_count=50)
+    results = []
+    for t in range(400):
+        frame = _sky(200, 300, brightness=0.5 * t)
+        value = 40 + int(20 * np.sin(t * 0.7))
+        _draw_dot(frame, 80, 60, 2, value)  # sabit kaynak (bastırılacak)
+        cx = 20 + (t % 250)  # çerçeve dışına taşmasın (300 genişlik)
+        _draw_dot(frame, cx, 150, 2, 60)  # gerçekte hareket eden hedef
+        results.append(detector.update(frame))
+
+    for t in range(300, 400):  # sabit kaynak çoktan bastırılmış olmalı
+        assert results[t].visible
+        x, y = results[t].centroid
+        assert abs(x - (20 + (t % 250))) < 3 and abs(y - 150) < 3  # hareketli hedefi buluyor
+
+
 def test_tracks_real_drone_within_a_few_pixels_on_consecutive_real_frames():
     frames_dir = FIXTURE / "frames_motion" / "cam0"
     truth = parse_detections_file(str(FIXTURE / "detections_motion" / "cam0.txt"))

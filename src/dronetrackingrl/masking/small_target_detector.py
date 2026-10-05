@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 import cv2
 import numpy as np
@@ -28,7 +28,14 @@ class SmallTargetDetector:
     3. bu tepkiden hızlı güncellenen zamansal bir arka planı çıkarır (durağan
        koyu yapılar -- ağaç, bina -- silinir),
     4. eşik üstü bileşenlerden, bir önceki karede de yakınında aday olanları
-       (kalıcılık) tutar ve en güçlüsünü seçer.
+       (kalıcılık) tutar ve en güçlüsünü seçer,
+    5. aynı konumda (kaba hücre) çok sayıda kez kazanan adayları "sabit yanlış
+       kaynak" sayıp kalıcı olarak bastırır -- gerçek bir dron binlerce karede
+       aynı birkaç pikselde durmaz, ama kamera önündeki bir anten/direk gibi
+       sabit bir kenar, arkasındaki gökyüzü değiştikçe (bulut/ışık) tepkisi
+       dalgalanıp "kalıcılık" testini hep geçebilir (sabit DEĞERLİ noktalar
+       arka plan modeline tam yakınsadığı için zaten sorun değil; sorun sabit
+       KONUMLU ama dalgalanan ŞİDDETLİ kenarlar).
 
     Dönen ``centroid`` HAM (tam çözünürlük) piksel koordinatındadır, yani
     ``detections/camN.txt`` etiketleriyle doğrudan karşılaştırılabilir.
@@ -55,6 +62,8 @@ class SmallTargetDetector:
         warmup_frames: int = 5,
         persist_radius: float = 20.0,
         response_scale: float = 100.0,
+        static_cell_size: float = 15.0,
+        static_suppress_count: int = 300,
     ):
         self.crop_size = crop_size
         self.work_width = work_width
@@ -66,6 +75,8 @@ class SmallTargetDetector:
         self.warmup_frames = warmup_frames
         self.persist_radius = persist_radius
         self.response_scale = response_scale
+        self.static_cell_size = static_cell_size
+        self.static_suppress_count = static_suppress_count
         self._kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
         self.reset()
 
@@ -73,6 +84,12 @@ class SmallTargetDetector:
         self._background: Optional[np.ndarray] = None
         self._frames_seen = 0
         self._previous_positions: List[Tuple[float, float]] = []
+        self._static_counts: Dict[Tuple[int, int], int] = {}
+        self._static_suppressed: Set[Tuple[int, int]] = set()
+
+    def _cell(self, position: Tuple[float, float]) -> Tuple[int, int]:
+        x, y = position
+        return (round(x / self.static_cell_size), round(y / self.static_cell_size))
 
     def update(self, frame: np.ndarray) -> MaskResult:
         gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
@@ -103,10 +120,18 @@ class SmallTargetDetector:
             for c in candidates
             if any(np.hypot(c.position[0] - px, c.position[1] - py) <= self.persist_radius for px, py in previous)
         ]
+        persistent = [c for c in persistent if self._cell(c.position) not in self._static_suppressed]
         if not persistent:
             return self._no_detection()
 
-        x, y = persistent[0].position
+        winner = persistent[0]
+        cell = self._cell(winner.position)
+        self._static_counts[cell] = self._static_counts.get(cell, 0) + 1
+        if self._static_counts[cell] > self.static_suppress_count:
+            self._static_suppressed.add(cell)  # bundan sonra bu hücre hiç aday sayılmaz
+            return self._no_detection()
+
+        x, y = winner.position
         crop = _crop_window(response, x, y, self.crop_size)
         return MaskResult(
             mask_crop=np.clip(crop / self.response_scale, 0.0, 1.0).astype(np.float32),
