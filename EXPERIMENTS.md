@@ -96,6 +96,22 @@ etiketten. Gri bantlar eğitimde hiç görülmemiş test bölgeleri. dataset3'ü
 
 ![Ground-truth doğruluk karşılaştırması](docs/figures/ground_truth_dogruluk_karsilastirmasi.png)
 
+## D3 — düzeltilmiş detektör (2026-10-05, 3 tohum)
+
+Sabit yanlış kaynak bastırma (fcd7c7b) eklendikten sonra, D3 ile aynı bölünme ve
+`latent+aux` ile yeniden önbellek üretilip koşuldu (yeni makine, 28 çekirdek).
+
+| Held-out bölge | Eski D3 | Yeni D3 (düzeltilmiş) | Sabit | Oracle | Geçiş (eski → yeni) |
+|---|---|---|---|---|---|
+| ds4 5001–10000 | 85,1 ± 0,2 | 85,0 ± 0,1 | 76,5 | 95,1 | eski değer kaydedilmedi → ~850–955 |
+| ds4 16001–18000 | 96,6 ± 0,7 | 96,0 ± 0,3 | 90,2 | 100,0 | ~557–792 → ~425–534 |
+
+**Sonuç: doğruluk değişmedi.** Fark tohum sapması içinde ya da hafifçe negatif.
+Cam6'nın kesinliği 0,37'den 0,74'e çıktı, ama ajanın doğruluğu bundan etkilenmedi.
+Geçiş sayısı 16001–18000'de ~%25-35 azaldı, bu tek başına anlamlı bir kazanç değil.
+Bu düzeltme temizlik olarak kalıyor. Ajanın asıl sınırı başka bir yerde: cam0'ın
+duyarlılığı (0,38), yani drone'un ~%62'si cam0'da kaçırılıyor.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
