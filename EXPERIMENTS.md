@@ -112,6 +112,23 @@ Geçiş sayısı 16001–18000'de ~%25-35 azaldı, bu tek başına anlamlı bir 
 Bu düzeltme temizlik olarak kalıyor. Ajanın asıl sınırı başka bir yerde: cam0'ın
 duyarlılığı (0,38), yani drone'un ~%62'si cam0'da kaçırılıyor.
 
+## D3 — düşük eşik (tüm kameralar, ns3/mr8) (2026-10-06, 3 tohum)
+
+Eşikler tüm kameralarda düşürüldü (min_response 14→8, noise_sigmas 6→3). Cam0 duyarlılığı
+0,38'den 0,73'e çıktı, ama diğer kameralarda sahte alarm arttı (cam1 kesinlik 0,35, cam6 0,46).
+Ajan doğruluğu değişmedi, hafifçe düştü:
+
+| Held-out bölge | D3 (önceki detektör) | D3 (düşük eşik) | Sabit | Oracle |
+|---|---|---|---|---|
+| ds4 5001–10000 | 85,0 ± 0,1 | 84,5 ± 0,8 | 76,5 | 95,1 |
+| ds4 16001–18000 | 96,0 ± 0,3 | 95,6 ± 1,1 | 90,2 | 100,0 |
+
+**Sonuç: kabul edilmedi.** Eşiği tüm kameralar için düşürmek ajanı yanıltıyor. Bir sonraki
+deneme yalnızca cam0 için düşük eşik (diğer kameralar korunur).
+
+Not: Önceki D3 raporunda "ajan en çok cam0'ı seçiyor" dendi, bu doğru değil. D3'te en çok
+seçilen kamera cam5 (seed 0, %28), cam0 %18. Bu iddia yalnızca C_hist için geçerli.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
