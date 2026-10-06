@@ -47,6 +47,7 @@ class RealCameraSignalProvider:
         frame_reader: Callable[[Path, int, int], Optional[np.ndarray]] = default_frame_reader,
         detector_factory: Callable[[int], object] = SmallTargetDetector,
         sync_table: SyncTable = DATASET3,
+        detector_kwargs: Optional[Dict[int, dict]] = None,
     ):
         self.frames_root = frames_root
         self.detections = detections
@@ -60,7 +61,12 @@ class RealCameraSignalProvider:
         self.crop_size = crop_size
         self.frame_reader = frame_reader
         self.sync_table = sync_table
-        self._detectors = {camera: detector_factory(crop_size) for camera in cameras}
+        detector_kwargs = detector_kwargs or {}
+        self._detectors = {
+            camera: detector_factory(crop_size, **detector_kwargs[camera]) if camera in detector_kwargs
+            else detector_factory(crop_size)
+            for camera in cameras
+        }
         self._ref_frame = start_ref_frame
 
     def reset(self) -> List[CameraStepSignal]:

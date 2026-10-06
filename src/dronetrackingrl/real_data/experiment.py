@@ -199,6 +199,7 @@ def build_signal_cache(
     progress_every: int = 500,
     log=print,
     sync_table: SyncTable = DATASET3,
+    detector_kwargs: Optional[Dict[int, dict]] = None,
 ) -> SignalCache:
     cameras = list(cameras)
     detections = load_detections(Path(detections_dir), cameras)
@@ -214,6 +215,7 @@ def build_signal_cache(
         crop_size=crop_size,
         sync_table=sync_table,
         frame_reader=_LastFrameMemo(),
+        detector_kwargs=detector_kwargs,
     )
     n_ref = ref_end - ref_start + 1
     n_cam = len(cameras)
@@ -263,21 +265,34 @@ def build_signal_cache(
     )
 
 
-def _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size) -> Path:
-    return Path(parts_dir) / f"{sync_name}_cam{camera}_{ref_start}_{ref_end}_r{reference_camera}_c{crop_size}.npz"
+def _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size, tag="") -> Path:
+    return Path(parts_dir) / (
+        f"{sync_name}_cam{camera}_{ref_start}_{ref_end}_r{reference_camera}_c{crop_size}{tag}.npz"
+    )
+
+
+# Düşük eşikli dedektör: soluk drone'ları da yakalar, ama sahte alarm da artırır.
+# Yalnızca seçilen kameralarda kullanılır (bkz. --low-threshold-cams).
+LOW_THRESHOLD_KWARGS = {"min_response": 8.0, "noise_sigmas": 3.0}
+
+
+def _low_threshold_map(cameras):
+    return {c: dict(LOW_THRESHOLD_KWARGS) for c in cameras} if cameras else None
 
 
 def _build_one_camera(args) -> str:
     (frames_root, detections_dir, camera, ref_start, ref_end, reference_camera, crop_size, sync_name,
-     parts_dir) = args
-    path = _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size)
+     parts_dir, detector_kwargs) = args
+    kwargs = {camera: detector_kwargs[camera]} if detector_kwargs and camera in detector_kwargs else None
+    tag = "_lowthr" if kwargs else ""
+    path = _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size, tag)
     if path.exists():  # önceki (yarım kalmış) bir koşudan tamamlanmış parça
         print(f"  [cam{camera}] hazır parça bulundu, atlanıyor: {path.name}", flush=True)
         return str(path)
     cache = build_signal_cache(
         frames_root, detections_dir, [camera], ref_start, ref_end, reference_camera=reference_camera,
         crop_size=crop_size, progress_every=1000, log=lambda m: print(f"  [cam{camera}] {m.strip()}", flush=True),
-        sync_table=SYNC_TABLES[sync_name],
+        sync_table=SYNC_TABLES[sync_name], detector_kwargs=kwargs,
     )
     temp = path.with_name(path.name + ".tmp")
     cache.save(temp)
@@ -289,6 +304,7 @@ def _build_one_camera(args) -> str:
 def build_signal_cache_parallel(
     frames_root, detections_dir, cameras: Sequence[int], ref_start: int, ref_end: int,
     sync_name: str, workers: int, reference_camera: int = 0, crop_size: int = 64, parts_dir=None,
+    detector_kwargs: Optional[Dict[int, dict]] = None,
 ) -> SignalCache:
     """Kameralar birbirinden bağımsız (her birinin kendi dedektörü) olduğu için
     kamera başına ayrı süreçte üretip birleştirmek seri üretimle birebir aynıdır.
@@ -299,7 +315,7 @@ def build_signal_cache_parallel(
     Path(parts_dir).mkdir(parents=True, exist_ok=True)
     jobs = [
         (str(frames_root), str(detections_dir), c, ref_start, ref_end, reference_camera, crop_size, sync_name,
-         str(parts_dir))
+         str(parts_dir), detector_kwargs)
         for c in cameras
     ]
     try:
@@ -814,6 +830,8 @@ def main(argv=None) -> None:
                        help="hangi dataset'in senkronizasyon tablosu")
     build.add_argument("--workers", type=int, default=1,
                        help="kamera başına ayrı süreç (bellek: süreç başına ~0.5-1GB)")
+    build.add_argument("--low-threshold-cams", type=int, nargs="*", default=[],
+                       help="bu kameralarda dedektör eşiğini düşür (LOW_THRESHOLD_KWARGS)")
     build.add_argument("--parts-dir", help="kamera başına parçaların saklanacağı klasör; koşu kesilirse "
                                            "aynı komutla kaldığı yerden devam eder (--workers > 1 ile)")
 
@@ -863,12 +881,14 @@ def main(argv=None) -> None:
                 args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
                 args.sync, args.workers, reference_camera=args.reference_camera, crop_size=args.crop_size,
                 parts_dir=args.parts_dir,
+                detector_kwargs=_low_threshold_map(args.low_threshold_cams),
             )
         else:
             cache = build_signal_cache(
                 args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
                 reference_camera=args.reference_camera, crop_size=args.crop_size,
                 log=lambda msg: print(msg, flush=True), sync_table=SYNC_TABLES[args.sync],
+                detector_kwargs=_low_threshold_map(args.low_threshold_cams),
             )
         cache.save(args.out)
         print(f"Kaydedildi: {args.out} ({Path(args.out).stat().st_size / 1e6:.1f} MB)", flush=True)

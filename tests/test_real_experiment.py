@@ -136,6 +136,20 @@ def test_slice_returns_matching_subrange():
     np.testing.assert_array_equal(part.visible, cache.visible[1:3])
 
 
+def test_detector_kwargs_apply_only_to_listed_cameras():
+    from dronetrackingrl.real_data.real_signal_provider import RealCameraSignalProvider
+    from dronetrackingrl.real_data.detections import parse_detections_file
+
+    detections = {c: parse_detections_file(str(DETECTIONS_DIR / f"cam{c}.txt")) for c in (0, 3)}
+    provider = RealCameraSignalProvider(
+        frames_root=FRAMES_ROOT, detections=detections, cameras=[0, 3], encoder=None,
+        latent_dim=64 * 64, start_ref_frame=1, end_ref_frame=3,
+        detector_kwargs={0: {"min_response": 8.0, "noise_sigmas": 3.0}},
+    )
+    assert provider._detectors[0].min_response == 8.0 and provider._detectors[0].noise_sigmas == 3.0
+    assert provider._detectors[3].min_response == 14.0 and provider._detectors[3].noise_sigmas == 6.0
+
+
 def test_slice_owns_its_memory_so_the_full_cache_can_be_freed():
     cache = _cam0_cache()
     part = cache.slice(2, 3)
