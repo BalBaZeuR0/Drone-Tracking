@@ -129,6 +129,34 @@ deneme yalnızca cam0 için düşük eşik (diğer kameralar korunur).
 Not: Önceki D3 raporunda "ajan en çok cam0'ı seçiyor" dendi, bu doğru değil. D3'te en çok
 seçilen kamera cam5 (seed 0, %28), cam0 %18. Bu iddia yalnızca C_hist için geçerli.
 
+## Cam0 düşük eşiğinin sahneler arası testi (2026-10-07)
+
+D3'te (dataset4 içi, aynı sahne) cam0 için düşük eşik 2 bölgede de kazandırmıştı
+(86,0 vs 85,0; 98,0 vs 96,0; bkz. yukarıdaki "Kalıcı yap" bölümü). Bunun gerçekten
+genel bir iyileştirme mi yoksa dataset4'e özgü bir ince ayar mı olduğunu görmek için,
+dataset4'te eğitilen modeli dataset3'ün (hiç görülmemiş sahne) iki bölgesinde test
+ettik: 12001–14000 ve 28001–30000 (dataset3 kareleri bu amaçla ilk kez çıkarıldı).
+
+| ds3 bölgesi | Varsayılan detektörle eğitilmiş | Cam0 düşük eşikle eğitilmiş | Sabit | Oracle |
+|---|---|---|---|---|
+| 12001–14000 | **86,5 ± 0,1** | 85,0 ± 0,7 | 83,7 | 94,7 |
+| 28001–30000 | 99,4 ± 0,1 | 99,4 ± 0,3 | 65,8 | 100,0 |
+
+![Cam0 düşük eşik, dataset4 içi (aynı sahne)](docs/figures/cam0_esik_ds4_aynisahne.png)
+![Cam0 düşük eşik, dataset3'e geçiş (sahneler arası)](docs/figures/cam0_esik_ds3_capraz.png)
+
+**Sonuç: genellemiyor.** 12001–14000'de düşük eşik aslında daha kötü (−1,5 puan,
+gürültü payının dışında). 28001–30000'de fark yok, ama oracle zaten 100 ve sabit
+kamera çok zayıf (65,8) olduğu için iki model de tavana yakın — orada ayırt edici
+değil. Yani dataset4 içinde görülen +1,0/+2,0 puanlık kazanç dataset4'e özgü;
+muhtemelen ns3/mr8 eşiği o sahnenin özel ışık/kontrast koşullarına göre iyi
+çalışıyor, dataset3'ün farklı koşullarına aktarılmıyor.
+
+**Çıkarım:** Tek sahneye göre ince ayarlanan bir dedektör eşiği, sahneler arası
+genellemeyi garanti etmiyor. `--low-threshold-cams` özelliği kodda kalıyor (genel
+ve test edilmiş), ama varsayılan olarak hiçbir kamerada açık değil — "dataset4
+için iyi" demek "genel olarak iyi" demek değil, bunu ayrı ayrı doğrulamak gerekir.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.

@@ -1,0 +1,1560 @@
+{
+  "config": {
+    "train_cache": "/media/noron/DISK02/DroneRL/caches/dataset4_cam0low.npz",
+    "out_dir": "/media/noron/DISK02/DroneRL/outputs/ds3test_ds4train_cam0low",
+    "eval_cache": "/media/noron/DISK02/DroneRL/caches/dataset3_cam0low.npz",
+    "timesteps": 200000,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "latent_dim": 16,
+    "encoder_epochs": 5,
+    "encoder_batch_size": 256,
+    "ppo_n_steps": 2048,
+    "ppo_batch_size": 64,
+    "ppo_gamma": 0.0,
+    "ppo_lr": 0.0003,
+    "ppo_ent_coef": 0.0,
+    "normalize_latents": true,
+    "policy": "shared",
+    "obs_mode": "latent+aux",
+    "switch_penalty": 0.0,
+    "include_own_history": false,
+    "random_seeds": 5,
+    "pack": true,
+    "train_range": [
+      1,
+      4800
+    ],
+    "extra_train": [
+      [
+        "/media/noron/DISK02/DroneRL/caches/dataset4_cam0low.npz",
+        10201,
+        15800
+      ],
+      [
+        "/media/noron/DISK02/DroneRL/caches/dataset4_cam0low.npz",
+        18201,
+        26000
+      ]
+    ],
+    "extra_eval": [
+      [
+        "/media/noron/DISK02/DroneRL/caches/dataset3_cam0low.npz",
+        28001,
+        30000
+      ]
+    ],
+    "eval_range": [
+      12001,
+      14000
+    ]
+  },
+  "environment": {
+    "python": "3.12.3",
+    "platform": "Linux-7.0.0-34-generic-x86_64-with-glibc2.39",
+    "torch": "2.14.1+cpu",
+    "numpy": "2.5.3"
+  },
+  "splits": {
+    "train": {
+      "ref_start": 1,
+      "ref_end": 4800,
+      "steps": 4799,
+      "cameras": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "eval": {
+      "ref_start": 12001,
+      "ref_end": 14000,
+      "steps": 1999,
+      "cameras": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    },
+    "train_extra1": {
+      "ref_start": 10201,
+      "ref_end": 15800,
+      "steps": 5599,
+      "cameras": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "train_extra2": {
+      "ref_start": 18201,
+      "ref_end": 26000,
+      "steps": 7799,
+      "cameras": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ]
+    },
+    "eval_extra1": {
+      "ref_start": 28001,
+      "ref_end": 30000,
+      "steps": 1999,
+      "cameras": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ]
+    }
+  },
+  "observation_diagnostics": {
+    "train": {
+      "0": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6260416666666667,
+        "mask_detect_rate": 0.46145833333333336,
+        "precision": 0.873589164785553,
+        "recall": 0.6439267886855241,
+        "tp": 1935,
+        "fp": 280,
+        "fn": 1070,
+        "tn": 1515,
+        "centroid_error_px_median": 2.6956161207883444,
+        "centroid_error_px_mean": 80.86472379127744
+      },
+      "1": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.155,
+        "mask_detect_rate": 0.24770833333333334,
+        "precision": 0.5349032800672834,
+        "recall": 0.8548387096774194,
+        "tp": 636,
+        "fp": 553,
+        "fn": 108,
+        "tn": 3503,
+        "centroid_error_px_median": 2.457216523844287,
+        "centroid_error_px_mean": 16.228126083828577
+      },
+      "2": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.18833333333333332,
+        "mask_detect_rate": 0.4402083333333333,
+        "precision": 0.4254614292475154,
+        "recall": 0.9944690265486725,
+        "tp": 899,
+        "fp": 1214,
+        "fn": 5,
+        "tn": 2682,
+        "centroid_error_px_median": 2.42946364544246,
+        "centroid_error_px_mean": 24.147327130563827
+      },
+      "3": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.438125,
+        "mask_detect_rate": 0.503125,
+        "precision": 0.6840579710144927,
+        "recall": 0.785544460294817,
+        "tp": 1652,
+        "fp": 763,
+        "fn": 451,
+        "tn": 1934,
+        "centroid_error_px_median": 9.012677768517333,
+        "centroid_error_px_mean": 279.43528671929624
+      },
+      "4": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.7391666666666666,
+        "mask_detect_rate": 0.379375,
+        "precision": 0.9599121361889071,
+        "recall": 0.4926719278466742,
+        "tp": 1748,
+        "fp": 73,
+        "fn": 1800,
+        "tn": 1179,
+        "centroid_error_px_median": 2.925595935728653,
+        "centroid_error_px_mean": 15.265121838475885
+      },
+      "5": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.31583333333333335,
+        "mask_detect_rate": 0.49416666666666664,
+        "precision": 0.5434232715008431,
+        "recall": 0.850263852242744,
+        "tp": 1289,
+        "fp": 1083,
+        "fn": 227,
+        "tn": 2201,
+        "centroid_error_px_median": 3.136381572916577,
+        "centroid_error_px_mean": 25.45264850979043
+      },
+      "6": {
+        "recording_rate": 0.21979166666666666,
+        "gt_visible_rate": 0.0,
+        "mask_detect_rate": 0.5990521327014218,
+        "precision": 0.0,
+        "recall": null,
+        "tp": 0,
+        "fp": 632,
+        "fn": 0,
+        "tn": 423,
+        "centroid_error_px_median": null,
+        "centroid_error_px_mean": null
+      }
+    },
+    "eval": {
+      "0": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.837,
+        "mask_detect_rate": 0.9935,
+        "precision": 0.8424760946149975,
+        "recall": 1.0,
+        "tp": 1674,
+        "fp": 313,
+        "fn": 0,
+        "tn": 13,
+        "centroid_error_px_median": 368.78088377890447,
+        "centroid_error_px_mean": 370.2367220055381
+      },
+      "1": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.3745,
+        "mask_detect_rate": 0.4215,
+        "precision": 0.8884934756820878,
+        "recall": 1.0,
+        "tp": 749,
+        "fp": 94,
+        "fn": 0,
+        "tn": 1157,
+        "centroid_error_px_median": 3.4773965733016263,
+        "centroid_error_px_mean": 3.4629985470753377
+      },
+      "2": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.366,
+        "mask_detect_rate": 0.2785,
+        "precision": 0.947935368043088,
+        "recall": 0.7213114754098361,
+        "tp": 528,
+        "fp": 29,
+        "fn": 204,
+        "tn": 1239,
+        "centroid_error_px_median": 3.910387039488656,
+        "centroid_error_px_mean": 5.147825887671316
+      },
+      "3": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.071,
+        "mask_detect_rate": 0.0865,
+        "precision": 0.8208092485549133,
+        "recall": 1.0,
+        "tp": 142,
+        "fp": 31,
+        "fn": 0,
+        "tn": 1827,
+        "centroid_error_px_median": 2.5212199300500817,
+        "centroid_error_px_mean": 2.6187605720609963
+      },
+      "4": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.677,
+        "mask_detect_rate": 0.683,
+        "precision": 0.9912152269399708,
+        "recall": 1.0,
+        "tp": 1354,
+        "fp": 12,
+        "fn": 0,
+        "tn": 634,
+        "centroid_error_px_median": 1.534557162298559,
+        "centroid_error_px_mean": 7.267756505497343
+      },
+      "5": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.395,
+        "mask_detect_rate": 0.425,
+        "precision": 0.9294117647058824,
+        "recall": 1.0,
+        "tp": 790,
+        "fp": 60,
+        "fn": 0,
+        "tn": 1150,
+        "centroid_error_px_median": 1.5377565370638702,
+        "centroid_error_px_mean": 2.1763993583129504
+      }
+    },
+    "train_extra1": {
+      "0": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 1.0,
+        "mask_detect_rate": 0.7664285714285715,
+        "precision": 1.0,
+        "recall": 0.7664285714285715,
+        "tp": 4292,
+        "fp": 0,
+        "fn": 1308,
+        "tn": 0,
+        "centroid_error_px_median": 2.0887862742898498,
+        "centroid_error_px_mean": 92.95931931294058
+      },
+      "1": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.4,
+        "mask_detect_rate": 0.5569642857142857,
+        "precision": 0.7181789034947098,
+        "recall": 1.0,
+        "tp": 2240,
+        "fp": 879,
+        "fn": 0,
+        "tn": 2481,
+        "centroid_error_px_median": 2.74506422377818,
+        "centroid_error_px_mean": 5.467410184311523
+      },
+      "2": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6935714285714286,
+        "mask_detect_rate": 0.7864285714285715,
+        "precision": 0.8787465940054496,
+        "recall": 0.9963954685890835,
+        "tp": 3870,
+        "fp": 534,
+        "fn": 14,
+        "tn": 1182,
+        "centroid_error_px_median": 2.3427762071087317,
+        "centroid_error_px_mean": 13.792856721858245
+      },
+      "3": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.8625,
+        "mask_detect_rate": 0.8401785714285714,
+        "precision": 0.9417640807651435,
+        "recall": 0.9173913043478261,
+        "tp": 4431,
+        "fp": 274,
+        "fn": 399,
+        "tn": 496,
+        "centroid_error_px_median": 4.659390780009402,
+        "centroid_error_px_mean": 48.29510650593448
+      },
+      "4": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6292857142857143,
+        "mask_detect_rate": 0.6423214285714286,
+        "precision": 0.9635807617458994,
+        "recall": 0.9835414301929626,
+        "tp": 3466,
+        "fp": 131,
+        "fn": 58,
+        "tn": 1945,
+        "centroid_error_px_median": 2.154913577293681,
+        "centroid_error_px_mean": 5.860988019394913
+      },
+      "5": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6446428571428572,
+        "mask_detect_rate": 0.6273214285714286,
+        "precision": 0.9496157130657558,
+        "recall": 0.9240997229916897,
+        "tp": 3336,
+        "fp": 177,
+        "fn": 274,
+        "tn": 1813,
+        "centroid_error_px_median": 2.308808083309432,
+        "centroid_error_px_mean": 11.95381535662288
+      },
+      "6": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.25642857142857145,
+        "mask_detect_rate": 0.37410714285714286,
+        "precision": 0.6854415274463007,
+        "recall": 1.0,
+        "tp": 1436,
+        "fp": 659,
+        "fn": 0,
+        "tn": 3505,
+        "centroid_error_px_median": 1.8975065778651525,
+        "centroid_error_px_mean": 1.8493967484553806
+      }
+    },
+    "train_extra2": {
+      "0": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 1.0,
+        "mask_detect_rate": 0.673974358974359,
+        "precision": 1.0,
+        "recall": 0.673974358974359,
+        "tp": 5257,
+        "fp": 0,
+        "fn": 2543,
+        "tn": 0,
+        "centroid_error_px_median": 2.4637846196559927,
+        "centroid_error_px_mean": 86.8407447967756
+      },
+      "1": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.3330769230769231,
+        "mask_detect_rate": 0.48025641025641025,
+        "precision": 0.6935397757608115,
+        "recall": 1.0,
+        "tp": 2598,
+        "fp": 1148,
+        "fn": 0,
+        "tn": 4054,
+        "centroid_error_px_median": 2.623228096057732,
+        "centroid_error_px_mean": 3.5769716587630054
+      },
+      "2": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6753846153846154,
+        "mask_detect_rate": 0.7862820512820513,
+        "precision": 0.8552095222566444,
+        "recall": 0.9956340167046317,
+        "tp": 5245,
+        "fp": 888,
+        "fn": 23,
+        "tn": 1644,
+        "centroid_error_px_median": 2.721701328461535,
+        "centroid_error_px_mean": 10.68461989653488
+      },
+      "3": {
+        "recording_rate": 0.1576923076923077,
+        "gt_visible_rate": 0.0,
+        "mask_detect_rate": 0.367479674796748,
+        "precision": 0.0,
+        "recall": null,
+        "tp": 0,
+        "fp": 452,
+        "fn": 0,
+        "tn": 778,
+        "centroid_error_px_median": null,
+        "centroid_error_px_mean": null
+      },
+      "4": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.8217948717948718,
+        "mask_detect_rate": 0.7846153846153846,
+        "precision": 0.9562091503267974,
+        "recall": 0.9129485179407176,
+        "tp": 5852,
+        "fp": 268,
+        "fn": 558,
+        "tn": 1122,
+        "centroid_error_px_median": 2.0933510471393904,
+        "centroid_error_px_mean": 18.44629331579657
+      },
+      "5": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6585897435897435,
+        "mask_detect_rate": 0.6588461538461539,
+        "precision": 0.8898618408250633,
+        "recall": 0.8902082927778859,
+        "tp": 4573,
+        "fp": 566,
+        "fn": 564,
+        "tn": 2097,
+        "centroid_error_px_median": 2.004131535506598,
+        "centroid_error_px_mean": 19.42890781321479
+      },
+      "6": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.5144871794871795,
+        "mask_detect_rate": 0.5306410256410257,
+        "precision": 0.9004590480792461,
+        "recall": 0.9287316222277597,
+        "tp": 3727,
+        "fp": 412,
+        "fn": 286,
+        "tn": 3375,
+        "centroid_error_px_median": 1.7635344421142727,
+        "centroid_error_px_mean": 4.220750855556324
+      }
+    },
+    "eval_extra1": {
+      "0": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.4845,
+        "mask_detect_rate": 0.4945,
+        "precision": 0.9797775530839231,
+        "recall": 1.0,
+        "tp": 969,
+        "fp": 20,
+        "fn": 0,
+        "tn": 1011,
+        "centroid_error_px_median": 1.745627706934218,
+        "centroid_error_px_mean": 20.091586261217028
+      },
+      "1": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.6325,
+        "mask_detect_rate": 0.647,
+        "precision": 0.9775888717156105,
+        "recall": 1.0,
+        "tp": 1265,
+        "fp": 29,
+        "fn": 0,
+        "tn": 706,
+        "centroid_error_px_median": 1.954029568320914,
+        "centroid_error_px_mean": 5.494618842532127
+      },
+      "2": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.658,
+        "mask_detect_rate": 0.6475,
+        "precision": 0.9691119691119691,
+        "recall": 0.9536474164133738,
+        "tp": 1255,
+        "fp": 40,
+        "fn": 61,
+        "tn": 644,
+        "centroid_error_px_median": 3.0537208464551067,
+        "centroid_error_px_mean": 3.1684901836556145
+      },
+      "3": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.4665,
+        "mask_detect_rate": 0.471,
+        "precision": 0.9830148619957537,
+        "recall": 0.992497320471597,
+        "tp": 926,
+        "fp": 16,
+        "fn": 7,
+        "tn": 1051,
+        "centroid_error_px_median": 1.7245748673578576,
+        "centroid_error_px_mean": 44.91115388752919
+      },
+      "4": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.129,
+        "mask_detect_rate": 0.1355,
+        "precision": 0.9520295202952029,
+        "recall": 1.0,
+        "tp": 258,
+        "fp": 13,
+        "fn": 0,
+        "tn": 1729,
+        "centroid_error_px_median": 1.8235549005259948,
+        "centroid_error_px_mean": 1.8117615410626264
+      },
+      "5": {
+        "recording_rate": 1.0,
+        "gt_visible_rate": 0.648,
+        "mask_detect_rate": 0.6555,
+        "precision": 0.988558352402746,
+        "recall": 1.0,
+        "tp": 1296,
+        "fp": 15,
+        "fn": 0,
+        "tn": 689,
+        "centroid_error_px_median": 1.7922709600816198,
+        "centroid_error_px_mean": 4.177027535574035
+      }
+    }
+  },
+  "baselines": {
+    "train": {
+      "random": {
+        "visible_rate_mean": 0.3516565951239842,
+        "visible_rate_std": 0.006179486069640188,
+        "runs": 5
+      },
+      "fixed": {
+        "0": {
+          "steps": 4799,
+          "avg_reward": 0.25192748489268596,
+          "visible_rate": 0.625963742446343,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "1": {
+          "steps": 4799,
+          "avg_reward": -0.6899354032090019,
+          "visible_rate": 0.15503229839549906,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 1.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "2": {
+          "steps": 4799,
+          "avg_reward": -0.6236715982496354,
+          "visible_rate": 0.18816420087518232,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 1.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "3": {
+          "steps": 4799,
+          "avg_reward": -0.1239841633673682,
+          "visible_rate": 0.4380079183163159,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "4": {
+          "steps": 4799,
+          "avg_reward": 0.47822463013127736,
+          "visible_rate": 0.7391123150656387,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 1.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "5": {
+          "steps": 4799,
+          "avg_reward": -0.3682017086893103,
+          "visible_rate": 0.3158991456553449,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 1.0,
+            "6": 0.0
+          }
+        },
+        "6": {
+          "steps": 4799,
+          "avg_reward": -1.0,
+          "visible_rate": 0.0,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 1.0
+          }
+        }
+      },
+      "best_fixed": {
+        "camera": 4,
+        "steps": 4799,
+        "avg_reward": 0.47822463013127736,
+        "visible_rate": 0.7391123150656387,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 0.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 1.0,
+          "5": 0.0,
+          "6": 0.0
+        }
+      },
+      "oracle": {
+        "steps": 4799,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 15,
+        "camera_share": {
+          "0": 0.625963742446343,
+          "1": 0.0,
+          "2": 0.0368826838924776,
+          "3": 0.15544905188580954,
+          "4": 0.17899562408835173,
+          "5": 0.0027088976870181286,
+          "6": 0.0
+        }
+      }
+    },
+    "eval": {
+      "random": {
+        "visible_rate_mean": 0.4487243621810905,
+        "visible_rate_std": 0.004808650261409873,
+        "runs": 5
+      },
+      "fixed": {
+        "0": {
+          "steps": 1999,
+          "avg_reward": 0.6738369184592297,
+          "visible_rate": 0.8369184592296148,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "1": {
+          "steps": 1999,
+          "avg_reward": -0.25162581290645325,
+          "visible_rate": 0.3741870935467734,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 1.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "2": {
+          "steps": 1999,
+          "avg_reward": -0.26863431715857927,
+          "visible_rate": 0.36568284142071034,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 1.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "3": {
+          "steps": 1999,
+          "avg_reward": -0.8589294647323662,
+          "visible_rate": 0.07053526763381691,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "4": {
+          "steps": 1999,
+          "avg_reward": 0.35467733866933465,
+          "visible_rate": 0.6773386693346674,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 1.0,
+            "5": 0.0
+          }
+        },
+        "5": {
+          "steps": 1999,
+          "avg_reward": -0.2096048024012006,
+          "visible_rate": 0.3951975987993997,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 1.0
+          }
+        }
+      },
+      "best_fixed": {
+        "camera": 0,
+        "steps": 1999,
+        "avg_reward": 0.6738369184592297,
+        "visible_rate": 0.8369184592296148,
+        "best_possible_rate": 0.9464732366183092,
+        "switches": 0,
+        "camera_share": {
+          "0": 1.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0
+        }
+      },
+      "oracle": {
+        "steps": 1999,
+        "avg_reward": 0.8929464732366184,
+        "visible_rate": 0.9464732366183092,
+        "best_possible_rate": 0.9464732366183092,
+        "switches": 4,
+        "camera_share": {
+          "0": 0.8904452226113057,
+          "1": 0.0,
+          "2": 0.062031015507753876,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.04752376188094047
+        }
+      }
+    },
+    "train_extra1": {
+      "random": {
+        "visible_rate_mean": 0.6429005179496338,
+        "visible_rate_std": 0.005077614230922446,
+        "runs": 5
+      },
+      "fixed": {
+        "0": {
+          "steps": 5599,
+          "avg_reward": 1.0,
+          "visible_rate": 1.0,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "1": {
+          "steps": 5599,
+          "avg_reward": -0.20021432398642613,
+          "visible_rate": 0.39989283800678693,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 1.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "2": {
+          "steps": 5599,
+          "avg_reward": 0.38703339882121807,
+          "visible_rate": 0.693516699410609,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 1.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "3": {
+          "steps": 5599,
+          "avg_reward": 0.724950884086444,
+          "visible_rate": 0.862475442043222,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "4": {
+          "steps": 5599,
+          "avg_reward": 0.25843900696552957,
+          "visible_rate": 0.6292195034827648,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 1.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "5": {
+          "steps": 5599,
+          "avg_reward": 0.28915877835327736,
+          "visible_rate": 0.6445793891766387,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 1.0,
+            "6": 0.0
+          }
+        },
+        "6": {
+          "steps": 5599,
+          "avg_reward": -0.48740846579746383,
+          "visible_rate": 0.25629576710126806,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 1.0
+          }
+        }
+      },
+      "best_fixed": {
+        "camera": 0,
+        "steps": 5599,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 1.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0,
+          "6": 0.0
+        }
+      },
+      "oracle": {
+        "steps": 5599,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 1.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0,
+          "6": 0.0
+        }
+      }
+    },
+    "train_extra2": {
+      "random": {
+        "visible_rate_mean": 0.5696371329657649,
+        "visible_rate_std": 0.002787573430788819,
+        "runs": 5
+      },
+      "fixed": {
+        "0": {
+          "steps": 7799,
+          "avg_reward": 1.0,
+          "visible_rate": 1.0,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "1": {
+          "steps": 7799,
+          "avg_reward": -0.3337607385562252,
+          "visible_rate": 0.33311963072188744,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 1.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "2": {
+          "steps": 7799,
+          "avg_reward": 0.35068598538274137,
+          "visible_rate": 0.6753429926913707,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 1.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "3": {
+          "steps": 7799,
+          "avg_reward": -1.0,
+          "visible_rate": 0.0,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "4": {
+          "steps": 7799,
+          "avg_reward": 0.643544044108219,
+          "visible_rate": 0.8217720220541095,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 1.0,
+            "5": 0.0,
+            "6": 0.0
+          }
+        },
+        "5": {
+          "steps": 7799,
+          "avg_reward": 0.31734837799717913,
+          "visible_rate": 0.6586741889985895,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 1.0,
+            "6": 0.0
+          }
+        },
+        "6": {
+          "steps": 7799,
+          "avg_reward": 0.0288498525451981,
+          "visible_rate": 0.5144249262725991,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0,
+            "6": 1.0
+          }
+        }
+      },
+      "best_fixed": {
+        "camera": 0,
+        "steps": 7799,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 1.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0,
+          "6": 0.0
+        }
+      },
+      "oracle": {
+        "steps": 7799,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 1.0,
+          "1": 0.0,
+          "2": 0.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0,
+          "6": 0.0
+        }
+      }
+    },
+    "eval_extra1": {
+      "random": {
+        "visible_rate_mean": 0.501150575287644,
+        "visible_rate_std": 0.012923117472710379,
+        "runs": 5
+      },
+      "fixed": {
+        "0": {
+          "steps": 1999,
+          "avg_reward": -0.03151575787893947,
+          "visible_rate": 0.4842421210605303,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 1.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "1": {
+          "steps": 1999,
+          "avg_reward": 0.2656328164082041,
+          "visible_rate": 0.632816408204102,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 1.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "2": {
+          "steps": 1999,
+          "avg_reward": 0.3166583291645823,
+          "visible_rate": 0.6583291645822912,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 1.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "3": {
+          "steps": 1999,
+          "avg_reward": -0.06653326663331666,
+          "visible_rate": 0.46673336668334164,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 1.0,
+            "4": 0.0,
+            "5": 0.0
+          }
+        },
+        "4": {
+          "steps": 1999,
+          "avg_reward": -0.742871435717859,
+          "visible_rate": 0.12856428214107055,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 1.0,
+            "5": 0.0
+          }
+        },
+        "5": {
+          "steps": 1999,
+          "avg_reward": 0.295647823911956,
+          "visible_rate": 0.647823911955978,
+          "best_possible_rate": 1.0,
+          "switches": 0,
+          "camera_share": {
+            "0": 0.0,
+            "1": 0.0,
+            "2": 0.0,
+            "3": 0.0,
+            "4": 0.0,
+            "5": 1.0
+          }
+        }
+      },
+      "best_fixed": {
+        "camera": 2,
+        "steps": 1999,
+        "avg_reward": 0.3166583291645823,
+        "visible_rate": 0.6583291645822912,
+        "best_possible_rate": 1.0,
+        "switches": 0,
+        "camera_share": {
+          "0": 0.0,
+          "1": 0.0,
+          "2": 1.0,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.0
+        }
+      },
+      "oracle": {
+        "steps": 1999,
+        "avg_reward": 1.0,
+        "visible_rate": 1.0,
+        "best_possible_rate": 1.0,
+        "switches": 4,
+        "camera_share": {
+          "0": 0.4842421210605303,
+          "1": 0.42621310655327665,
+          "2": 0.04752376188094047,
+          "3": 0.0,
+          "4": 0.0,
+          "5": 0.04202101050525263
+        }
+      }
+    }
+  },
+  "ppo": {
+    "0": {
+      "encoder_loss_first": 0.033114490362202965,
+      "encoder_loss_last": 0.00023359087619972548,
+      "train_seconds": 15237.089286327362,
+      "splits": {
+        "train": {
+          "steps": 4799,
+          "avg_reward": 0.5911648260054178,
+          "visible_rate": 0.7955824130027089,
+          "best_possible_rate": 1.0,
+          "switches": 677,
+          "camera_share": {
+            "0": 0.2667222337987081,
+            "1": 0.016461762867264012,
+            "2": 0.09418628881016879,
+            "3": 0.19379037299437382,
+            "4": 0.17024380079183163,
+            "5": 0.2581787872473432,
+            "6": 0.00041675349031048136
+          }
+        },
+        "eval": {
+          "steps": 1999,
+          "avg_reward": 0.7158579289644822,
+          "visible_rate": 0.8579289644822411,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 414,
+          "camera_share": {
+            "0": 0.3491745872936468,
+            "1": 0.005502751375687844,
+            "2": 0.014007003501750876,
+            "3": 0.017008504252126064,
+            "4": 0.3921960980490245,
+            "5": 0.2221110555277639,
+            "-1": 0.0
+          }
+        },
+        "train_extra1": {
+          "steps": 5599,
+          "avg_reward": 0.9824968744418646,
+          "visible_rate": 0.9912484372209323,
+          "best_possible_rate": 1.0,
+          "switches": 1220,
+          "camera_share": {
+            "0": 0.37310233970351847,
+            "1": 0.05143775674227541,
+            "2": 0.14306126093945348,
+            "3": 0.06911948562243257,
+            "4": 0.15645651009108769,
+            "5": 0.17610287551348455,
+            "6": 0.030719771387747813
+          }
+        },
+        "train_extra2": {
+          "steps": 7799,
+          "avg_reward": 0.9605077574047954,
+          "visible_rate": 0.9802538787023978,
+          "best_possible_rate": 1.0,
+          "switches": 1567,
+          "camera_share": {
+            "0": 0.36273881266829083,
+            "1": 0.03692781125785357,
+            "2": 0.14745480189767918,
+            "3": 0.0025644313373509426,
+            "4": 0.20874471086036672,
+            "5": 0.13783818438261317,
+            "6": 0.10373124759584562
+          }
+        },
+        "eval_extra1": {
+          "steps": 1999,
+          "avg_reward": 0.9949974987493747,
+          "visible_rate": 0.9974987493746873,
+          "best_possible_rate": 1.0,
+          "switches": 596,
+          "camera_share": {
+            "0": 0.2336168084042021,
+            "1": 0.16058029014507252,
+            "2": 0.12106053026513257,
+            "3": 0.11905952976488245,
+            "4": 0.0,
+            "5": 0.36568284142071034,
+            "-1": 0.0
+          }
+        }
+      }
+    },
+    "1": {
+      "encoder_loss_first": 0.02188561875369304,
+      "encoder_loss_last": 0.00039483208336021225,
+      "train_seconds": 14894.653554916382,
+      "splits": {
+        "train": {
+          "steps": 4799,
+          "avg_reward": 0.6024171702438008,
+          "visible_rate": 0.8012085851219004,
+          "best_possible_rate": 1.0,
+          "switches": 436,
+          "camera_share": {
+            "0": 0.18045426130443842,
+            "1": 0.019587414044592622,
+            "2": 0.10627214002917275,
+            "3": 0.19504063346530529,
+            "4": 0.25651177328610125,
+            "5": 0.24046676390914773,
+            "6": 0.0016670139612419254
+          }
+        },
+        "eval": {
+          "steps": 1999,
+          "avg_reward": 0.6838419209604802,
+          "visible_rate": 0.8419209604802401,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 257,
+          "camera_share": {
+            "0": 0.27463731865932967,
+            "1": 0.015507753876938469,
+            "2": 0.017008504252126064,
+            "3": 0.027013506753376687,
+            "4": 0.545272636318159,
+            "5": 0.12056028014007003,
+            "-1": 0.0
+          }
+        },
+        "train_extra1": {
+          "steps": 5599,
+          "avg_reward": 0.9724950884086444,
+          "visible_rate": 0.9862475442043221,
+          "best_possible_rate": 1.0,
+          "switches": 1398,
+          "camera_share": {
+            "0": 0.03196999464190034,
+            "1": 0.16377924629398108,
+            "2": 0.1853902482586176,
+            "3": 0.16913734595463475,
+            "4": 0.2695124129308805,
+            "5": 0.09519557063761386,
+            "6": 0.08501518128237186
+          }
+        },
+        "train_extra2": {
+          "steps": 7799,
+          "avg_reward": 0.9592255417361201,
+          "visible_rate": 0.97961277086806,
+          "best_possible_rate": 1.0,
+          "switches": 1730,
+          "camera_share": {
+            "0": 0.052314399281959224,
+            "1": 0.08090780869342223,
+            "2": 0.29593537633029876,
+            "3": 0.0005128862674701885,
+            "4": 0.25772534940376973,
+            "5": 0.10309013976150788,
+            "6": 0.209514040261572
+          }
+        },
+        "eval_extra1": {
+          "steps": 1999,
+          "avg_reward": 0.9859929964982491,
+          "visible_rate": 0.9929964982491246,
+          "best_possible_rate": 1.0,
+          "switches": 472,
+          "camera_share": {
+            "0": 0.11155577788894447,
+            "1": 0.26013006503251623,
+            "2": 0.11755877938969485,
+            "3": 0.14057028514257128,
+            "4": 0.0750375187593797,
+            "5": 0.29514757378689344,
+            "-1": 0.0
+          }
+        }
+      }
+    },
+    "2": {
+      "encoder_loss_first": 0.01990932563464043,
+      "encoder_loss_last": 0.0002745991345742228,
+      "train_seconds": 14526.576031208038,
+      "splits": {
+        "train": {
+          "steps": 4799,
+          "avg_reward": 0.6003334027922483,
+          "visible_rate": 0.8001667013961242,
+          "best_possible_rate": 1.0,
+          "switches": 558,
+          "camera_share": {
+            "0": 0.2037924567618254,
+            "1": 0.0022921441967076474,
+            "2": 0.10564700979370702,
+            "3": 0.18733069389456136,
+            "4": 0.21337778703896645,
+            "5": 0.2875599083142321,
+            "6": 0.0
+          }
+        },
+        "eval": {
+          "steps": 1999,
+          "avg_reward": 0.6998499249624812,
+          "visible_rate": 0.8499249624812406,
+          "best_possible_rate": 0.9464732366183092,
+          "switches": 454,
+          "camera_share": {
+            "0": 0.3296648324162081,
+            "1": 0.030515257628814407,
+            "2": 0.03851925962981491,
+            "3": 0.026513256628314157,
+            "4": 0.38369184592296146,
+            "5": 0.19109554777388693,
+            "-1": 0.0
+          }
+        },
+        "train_extra1": {
+          "steps": 5599,
+          "avg_reward": 0.9778531880692981,
+          "visible_rate": 0.988926594034649,
+          "best_possible_rate": 1.0,
+          "switches": 1757,
+          "camera_share": {
+            "0": 0.2061082336131452,
+            "1": 0.1478835506340418,
+            "2": 0.22236113591712806,
+            "3": 0.1048401500267905,
+            "4": 0.12752277192355777,
+            "5": 0.13716735131273441,
+            "6": 0.054116806572602254
+          }
+        },
+        "train_extra2": {
+          "steps": 7799,
+          "avg_reward": 0.9576868829337094,
+          "visible_rate": 0.9788434414668548,
+          "best_possible_rate": 1.0,
+          "switches": 2371,
+          "camera_share": {
+            "0": 0.161943838953712,
+            "1": 0.08539556353378638,
+            "2": 0.30529555071162967,
+            "3": 0.0015386588024105655,
+            "4": 0.18168996025131426,
+            "5": 0.11463008077958713,
+            "6": 0.14950634696755993
+          }
+        },
+        "eval_extra1": {
+          "steps": 1999,
+          "avg_reward": 0.9809904952476238,
+          "visible_rate": 0.9904952476238119,
+          "best_possible_rate": 1.0,
+          "switches": 664,
+          "camera_share": {
+            "0": 0.12156078039019509,
+            "1": 0.21060530265132565,
+            "2": 0.19309654827413708,
+            "3": 0.15657828914457228,
+            "4": 0.029514757378689346,
+            "5": 0.28864432216108055,
+            "-1": 0.0
+          }
+        }
+      }
+    }
+  },
+  "elapsed_seconds": 50389.14581537247
+}

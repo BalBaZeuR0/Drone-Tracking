@@ -149,7 +149,9 @@ def main(argv=None) -> None:
     add.add_argument("--name", required=True)
     table = sub.add_parser("table", help="markdown tablo yazdır")
     table.add_argument("--names", nargs="*")
-    plot = sub.add_parser("plot", help="karşılaştırma grafiği")
+    plot = sub.add_parser("plot", help="karşılaştırma grafiği (yalnızca AYNI bölgeleri kullanan "
+                                        "koşularda anlamlı; farklı önbelleklerden gelen aynı-adlı "
+                                        "bölünmeler farklı veriye işaret edebilir, karşılaştırma yanıltır)")
     plot.add_argument("--names", nargs="+", required=True)
     plot.add_argument("--out", required=True)
     args = parser.parse_args(argv)
