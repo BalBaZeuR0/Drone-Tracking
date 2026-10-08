@@ -157,6 +157,62 @@ genellemeyi garanti etmiyor. `--low-threshold-cams` özelliği kodda kalıyor (g
 ve test edilmiş), ama varsayılan olarak hiçbir kamerada açık değil — "dataset4
 için iyi" demek "genel olarak iyi" demek değil, bunu ayrı ayrı doğrulamak gerekir.
 
+## Fold B — karışık eğitimin ikinci bölünmeyle tekrarı (2026-10-07, 3 tohum)
+Ayarlar C_hist ile aynı (latent+aux, own-history, switch_penalty 0.1). Üç koşu:
+`foldB_mix` (ds3+ds4), `foldB_ds3only`, `foldB_ds4only`; sonuçlar `results/foldB_*`
+ve `results/ledger.csv`. Yeni sahnedeki her bölge için PPO − en iyi sabit kamera (puan):
+
+| Bölge | sadece diğer sahne | karışık |
+|---|---|---|
+| ds4 1–4800 | +2,5 (ds3) | −0,5 |
+| ds4 10201–15800 | −2,2 (ds3) | −2,5 |
+| ds4 18201–26000 | −4,4 (ds3) | −5,3 |
+| ds3 1–11800 | −0,8 (ds4) | −1,0 |
+| ds3 14200–27800 | −7,3 (ds4) | −7,5 |
+| ds3 30201–33875 | −20,1 (ds4) | −18,6 |
+
+**Sonuç: C'deki karışık-eğitim kazancı tekrarlamadı.** Küçük bir eğitim-verisi
+dengesizliğiyle de karıştı; "işe yaramıyor" değil, "işe yaradığı güvenilir şekilde
+gösterilemedi". Aynı sahnede ajan güvenilir (8/8 kazanç), yeni sahnede tutarsız.
+
+## RELO hibrit dedektör — dedektör düzeyi kapı (2026-10-08) — ❌ kapı geçilmedi
+Tasarım: `docs/superpowers/specs/2026-10-08-relo-hybrid-detector-design.md`.
+SmallTargetDetector drone'u bulur, RELO-T256 (ICML 2026, hazır ağırlık, ince ayar yok)
+takip eder. Ölçüm `scripts/relo_gate.py`: aynı aralıkta klasik önbellek dilimi vs RELO
+önbelleği; **hit** = etiketli karelerin ≤10 px doğru yerde bulunan oranı (hit20: ≤20 px).
+Hız: 6–7 kamera paralel, kamera başına ~20 kare/s (RTX 5060).
+
+**1. pilot (ayar penceresi ds3 20001–21500, varsayılanlar):** ortalama hit 0,830 → 0,387.
+RELO güveni (softmax maksimumu) yanlış hedefte de 0,7–1,0 → kaybı yakalamıyor. İki hata:
+klasiğin sahte kaynağından başlayıp onu sonsuza dek izlemek (cam0, cam4) ve drone
+kaybolunca kutunun 300–800 px'e şişmesi (cam2, cam5). RELO–klasik >50 px ayrıştığında
+klasik ~%97 haklıydı.
+
+**Düzeltme (commit bff0aa4):** klasiğin kalıcı izi RELO'dan >50 px uzaksa yeniden çapala;
+kutu kenarı >60 px ise kayıp say. **2. pilot (aynı pencere):** hit 0,830 → 0,842
+(cam4 0,907→1,000, cam5 0,829→0,996; cam0'daki hata klasik dedektörden miras).
+
+**Ayarda kullanılmayan pencereler (ortalama, klasik → RELO):**
+
+| Pencere | hit | hit20 | precision | Öne çıkan |
+|---|---|---|---|---|
+| ds4 5001–7000 | 0,866 → 0,870 | 0,871 → 0,874 | 0,771 → 0,628 | cam6 hit 1,00→0,92 |
+| ds4 16001–18000 | 0,839 → 0,831 | 0,849 → 0,843 | 0,870 → 0,732 | cam0 0,64→0,70, cam2 0,78→0,88, **cam6 0,91→0,67** |
+| ds3 12001–14000 | 0,828 → 0,791 | 0,844 → 0,801 | 0,904 → 0,875 | **cam3 1,00→0,73** |
+
+ds4 cam0 recall yükseldi (0,36→0,40; 0,69→0,85) ama cam6 precision çöktü (0,72→0,25;
+0,97→0,72). Doğru yerdeyken RELO daha hassas (medyan hata çoğu kamerada 2–4 px → 1–2 px).
+
+**Kalan hata türü (teşhis):** RELO **sabit bir nesneye** kilitleniyor. ds4 cam6'da
+(16, 382) — klasik dedektörün statik-kaynak bastırmasıyla öğrendiği anten; RELO orada
+kalıyor (konum std 1,4 px), drone görünmezken 1485 karede çıktı veriyor (klasik 195).
+ds3 cam3'te (749, 676), std 0,4 px. **Not:** bu teşhis ayar dışı pencerelere bakılarak
+yapıldı; bir sonraki düzeltme bunlara göre yapılırsa bu pencereler artık "dokunulmamış"
+sayılamaz, yeni bir doğrulama penceresi gerekir.
+
+**Karar:** spec'teki kapı ölçütü (dedektör düzeyinde klasikten daha iyi) sağlanmadı →
+RL koşuları başlatılmadı, kullanıcıya raporlandı.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
