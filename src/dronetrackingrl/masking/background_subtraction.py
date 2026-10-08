@@ -10,6 +10,10 @@ class MaskResult:
     mask_crop: np.ndarray
     centroid: Optional[Tuple[float, float]]
     visible: bool
+    # Yalnızca HybridReloDetector doldurur: RELO takipteyken güven [0,1] ve kutu (w, h) px.
+    relo_score: Optional[float] = None
+    relo_box_wh: Optional[Tuple[float, float]] = None
+    relo_tracking: bool = False
 
 
 class BackgroundSubtractor:

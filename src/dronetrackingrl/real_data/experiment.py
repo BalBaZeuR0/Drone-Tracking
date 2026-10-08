@@ -18,6 +18,7 @@ import argparse
 import csv
 import json
 import logging
+import multiprocessing
 import os
 import platform
 import shutil
@@ -41,7 +42,8 @@ from dronetrackingrl.real_data.training import load_detections
 from dronetrackingrl.rl_env.camera_switch_env import OWN_HISTORY_DIM, CameraSwitchEnv
 from dronetrackingrl.rl_env.signal_provider import CameraStepSignal
 
-CACHE_VERSION = 2  # v2: maskeleme SmallTargetDetector (kırpım = blackhat tepkisi, blob merkezi ham piksel)
+CACHE_VERSION = 3  # v3: + RELO alanları (relo_score/relo_box_wh/relo_tracking)
+READABLE_CACHE_VERSIONS = (2, 3)  # v2 (SmallTargetDetector, RELO alanları yok) da yüklenir
 logger = logging.getLogger("dronetrackingrl.experiment")
 
 
@@ -60,6 +62,19 @@ class SignalCache:
     visible: np.ndarray     # bool    (n_ref, n_cam)  ground-truth görünürlük (REWARD kaynağı)
     mask_pixel: np.ndarray  # float64 (n_ref, n_cam, 2)  maskeleme blob merkezi, yoksa NaN
     gt_pixel: np.ndarray    # float64 (n_ref, n_cam, 2)  ground-truth (x,y), görünmüyorsa NaN
+    # HybridReloDetector çıktıları (klasik dedektörle üretilen ve v2 önbelleklerde boş):
+    relo_score: Optional[np.ndarray] = None     # float32 (n_ref, n_cam)  RELO güveni [0,1], takipte değilse NaN
+    relo_box_wh: Optional[np.ndarray] = None    # float32 (n_ref, n_cam, 2)  RELO kutusu (w,h) px, yoksa NaN
+    relo_tracking: Optional[np.ndarray] = None  # bool    (n_ref, n_cam)  hibrit dedektör TAKİP durumunda mı
+
+    def __post_init__(self):
+        n, k = self.recording.shape
+        if self.relo_score is None:
+            self.relo_score = np.full((n, k), np.nan, dtype=np.float32)
+        if self.relo_box_wh is None:
+            self.relo_box_wh = np.full((n, k, 2), np.nan, dtype=np.float32)
+        if self.relo_tracking is None:
+            self.relo_tracking = np.zeros((n, k), dtype=bool)
 
     @property
     def num_frames(self) -> int:
@@ -79,6 +94,8 @@ class SignalCache:
             ref_start=ref_start, ref_end=ref_end, crop_size=self.crop_size,
             crops=self.crops[a:b].copy(), recording=self.recording[a:b].copy(), visible=self.visible[a:b].copy(),
             mask_pixel=self.mask_pixel[a:b].copy(), gt_pixel=self.gt_pixel[a:b].copy(),
+            relo_score=self.relo_score[a:b].copy(), relo_box_wh=self.relo_box_wh[a:b].copy(),
+            relo_tracking=self.relo_tracking[a:b].copy(),
         )
 
     def save(self, path) -> None:
@@ -97,14 +114,18 @@ class SignalCache:
                 visible=self.visible,
                 mask_pixel=self.mask_pixel,
                 gt_pixel=self.gt_pixel,
+                relo_score=self.relo_score,
+                relo_box_wh=self.relo_box_wh,
+                relo_tracking=self.relo_tracking,
             )
 
     @classmethod
     def load(cls, path) -> "SignalCache":
         data = np.load(Path(path))
         reference_camera, ref_start, ref_end, crop_size, version = (int(v) for v in data["meta"])
-        if version != CACHE_VERSION:
+        if version not in READABLE_CACHE_VERSIONS:
             raise ValueError(f"Önbellek sürümü uyumsuz: dosya v{version}, kod v{CACHE_VERSION}")
+        relo = {name: data[name] for name in ("relo_score", "relo_box_wh", "relo_tracking") if name in data.files}
         return cls(
             cameras=[int(c) for c in data["cameras"]],
             reference_camera=reference_camera,
@@ -116,6 +137,7 @@ class SignalCache:
             visible=data["visible"],
             mask_pixel=data["mask_pixel"],
             gt_pixel=data["gt_pixel"],
+            **relo,
         )
 
 
@@ -139,6 +161,11 @@ class SignalCache:
             visible=np.concatenate([self.visible, np.zeros((n, extra), dtype=bool)], axis=1),
             mask_pixel=np.concatenate([self.mask_pixel, np.full((n, extra, 2), np.nan)], axis=1),
             gt_pixel=np.concatenate([self.gt_pixel, np.full((n, extra, 2), np.nan)], axis=1),
+            relo_score=np.concatenate([self.relo_score, np.full((n, extra), np.nan, dtype=np.float32)], axis=1),
+            relo_box_wh=np.concatenate(
+                [self.relo_box_wh, np.full((n, extra, 2), np.nan, dtype=np.float32)], axis=1
+            ),
+            relo_tracking=np.concatenate([self.relo_tracking, np.zeros((n, extra), dtype=bool)], axis=1),
         )
 
 
@@ -159,6 +186,9 @@ def merge_camera_caches(parts: Sequence["SignalCache"]) -> "SignalCache":
         visible=np.concatenate([p.visible for p in parts], axis=1),
         mask_pixel=np.concatenate([p.mask_pixel for p in parts], axis=1),
         gt_pixel=np.concatenate([p.gt_pixel for p in parts], axis=1),
+        relo_score=np.concatenate([p.relo_score for p in parts], axis=1),
+        relo_box_wh=np.concatenate([p.relo_box_wh for p in parts], axis=1),
+        relo_tracking=np.concatenate([p.relo_tracking for p in parts], axis=1),
     )
 
 
@@ -200,8 +230,11 @@ def build_signal_cache(
     log=print,
     sync_table: SyncTable = DATASET3,
     detector_kwargs: Optional[Dict[int, dict]] = None,
+    detector_factory=None,
+    frame_reader=None,
 ) -> SignalCache:
     cameras = list(cameras)
+    extra = {} if detector_factory is None else {"detector_factory": detector_factory}
     detections = load_detections(Path(detections_dir), cameras)
     provider = RealCameraSignalProvider(
         frames_root=Path(frames_root),
@@ -214,8 +247,9 @@ def build_signal_cache(
         reference_camera=reference_camera,
         crop_size=crop_size,
         sync_table=sync_table,
-        frame_reader=_LastFrameMemo(),
+        frame_reader=_LastFrameMemo() if frame_reader is None else _LastFrameMemo(frame_reader),
         detector_kwargs=detector_kwargs,
+        **extra,
     )
     n_ref = ref_end - ref_start + 1
     n_cam = len(cameras)
@@ -224,6 +258,9 @@ def build_signal_cache(
     visible = np.zeros((n_ref, n_cam), dtype=bool)
     mask_pixel = np.full((n_ref, n_cam, 2), np.nan, dtype=np.float64)
     gt_pixel = np.full((n_ref, n_cam, 2), np.nan, dtype=np.float64)
+    relo_score = np.full((n_ref, n_cam), np.nan, dtype=np.float32)
+    relo_box_wh = np.full((n_ref, n_cam, 2), np.nan, dtype=np.float32)
+    relo_tracking = np.zeros((n_ref, n_cam), dtype=bool)
 
     def store(index: int, signals: List[CameraStepSignal]) -> None:
         ref_frame = ref_start + index
@@ -236,6 +273,13 @@ def build_signal_cache(
             if signal.visible:
                 frame_id = round(mapped_frame(ref_frame, reference_camera, camera, sync_table))
                 gt_pixel[index, j] = detections[camera][frame_id]
+            result = provider.last_mask_results[j]
+            if result is not None:
+                relo_tracking[index, j] = result.relo_tracking
+                if result.relo_score is not None:
+                    relo_score[index, j] = result.relo_score
+                if result.relo_box_wh is not None:
+                    relo_box_wh[index, j] = result.relo_box_wh
 
     started = time.time()
     store(0, provider.reset())
@@ -262,6 +306,9 @@ def build_signal_cache(
         visible=visible,
         mask_pixel=mask_pixel,
         gt_pixel=gt_pixel,
+        relo_score=relo_score,
+        relo_box_wh=relo_box_wh,
+        relo_tracking=relo_tracking,
     )
 
 
@@ -276,15 +323,65 @@ def _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camer
 LOW_THRESHOLD_KWARGS = {"min_response": 8.0, "noise_sigmas": 3.0}
 
 
+@dataclass
+class ReloOptions:
+    """Hibrit RELO dedektörünün ayarları (bkz. masking/hybrid_detector.py)."""
+
+    relo_root: str
+    variant: str = "t256"
+    init_box_px: float = 20.0
+    lost_threshold: float = 0.2
+    lost_patience: int = 5
+    init_streak: int = 3
+    min_box_px: float = 8.0
+
+    def tag(self) -> str:
+        return (f"_relo{self.variant}_b{self.init_box_px:g}_t{self.lost_threshold:g}"
+                f"_p{self.lost_patience}_s{self.init_streak}_m{self.min_box_px:g}")
+
+
+class HybridDetectorFactory:
+    """``detector_factory(crop_size, **klasik_ayarlar)`` -> HybridReloDetector. Seçilebilir
+    (pickle): paralel üretimde işçi süreçlerine gider; RELO modeli işçide, ilk
+    başlatmada yüklenir."""
+
+    def __init__(self, options: ReloOptions):
+        self.options = options
+
+    def __call__(self, crop_size: int, **classic_kwargs):
+        from functools import partial
+
+        from dronetrackingrl.masking.hybrid_detector import HybridReloDetector
+        from dronetrackingrl.masking.relo_tracker import ReloTracker
+
+        o = self.options
+        return HybridReloDetector(
+            crop_size=crop_size,
+            tracker_factory=partial(ReloTracker, o.relo_root, o.variant, o.min_box_px),
+            init_streak=o.init_streak, init_box_px=o.init_box_px,
+            lost_threshold=o.lost_threshold, lost_patience=o.lost_patience,
+            **classic_kwargs,
+        )
+
+
+def _detector_setup(relo_options: Optional[ReloOptions]) -> dict:
+    """build_signal_cache'e verilecek dedektör/okuyucu (None = klasik SmallTargetDetector)."""
+    if relo_options is None:
+        return {}
+    from dronetrackingrl.real_data.real_signal_provider import color_frame_reader
+
+    return {"detector_factory": HybridDetectorFactory(relo_options), "frame_reader": color_frame_reader}
+
+
 def _low_threshold_map(cameras):
     return {c: dict(LOW_THRESHOLD_KWARGS) for c in cameras} if cameras else None
 
 
 def _build_one_camera(args) -> str:
     (frames_root, detections_dir, camera, ref_start, ref_end, reference_camera, crop_size, sync_name,
-     parts_dir, detector_kwargs) = args
+     parts_dir, detector_kwargs, relo_options) = args
     kwargs = {camera: detector_kwargs[camera]} if detector_kwargs and camera in detector_kwargs else None
-    tag = "_lowthr" if kwargs else ""
+    tag = ("_lowthr" if kwargs else "") + (relo_options.tag() if relo_options else "")
     path = _part_path(parts_dir, sync_name, camera, ref_start, ref_end, reference_camera, crop_size, tag)
     if path.exists():  # önceki (yarım kalmış) bir koşudan tamamlanmış parça
         print(f"  [cam{camera}] hazır parça bulundu, atlanıyor: {path.name}", flush=True)
@@ -292,7 +389,7 @@ def _build_one_camera(args) -> str:
     cache = build_signal_cache(
         frames_root, detections_dir, [camera], ref_start, ref_end, reference_camera=reference_camera,
         crop_size=crop_size, progress_every=1000, log=lambda m: print(f"  [cam{camera}] {m.strip()}", flush=True),
-        sync_table=SYNC_TABLES[sync_name], detector_kwargs=kwargs,
+        sync_table=SYNC_TABLES[sync_name], detector_kwargs=kwargs, **_detector_setup(relo_options),
     )
     temp = path.with_name(path.name + ".tmp")
     cache.save(temp)
@@ -305,6 +402,7 @@ def build_signal_cache_parallel(
     frames_root, detections_dir, cameras: Sequence[int], ref_start: int, ref_end: int,
     sync_name: str, workers: int, reference_camera: int = 0, crop_size: int = 64, parts_dir=None,
     detector_kwargs: Optional[Dict[int, dict]] = None,
+    relo_options: Optional[ReloOptions] = None,
 ) -> SignalCache:
     """Kameralar birbirinden bağımsız (her birinin kendi dedektörü) olduğu için
     kamera başına ayrı süreçte üretip birleştirmek seri üretimle birebir aynıdır.
@@ -315,11 +413,13 @@ def build_signal_cache_parallel(
     Path(parts_dir).mkdir(parents=True, exist_ok=True)
     jobs = [
         (str(frames_root), str(detections_dir), c, ref_start, ref_end, reference_camera, crop_size, sync_name,
-         str(parts_dir), detector_kwargs)
+         str(parts_dir), detector_kwargs, relo_options)
         for c in cameras
     ]
+    # CUDA (RELO) fork edilmiş süreçte güvenli değil: RELO'da süreçler sıfırdan başlatılır.
+    context = multiprocessing.get_context("spawn") if relo_options else None
     try:
-        with ProcessPoolExecutor(max_workers=workers) as pool:
+        with ProcessPoolExecutor(max_workers=workers, mp_context=context) as pool:
             paths = list(pool.map(_build_one_camera, jobs))
         merged = merge_camera_caches([SignalCache.load(path) for path in paths])
     finally:
@@ -331,8 +431,9 @@ def build_signal_cache_parallel(
 # Gözlem modları: "latent" = sadece encoder latent'i; "latent+aux" = latent + geçmiş
 # karelere bakan (nedensel) dedektör özellikleri; "gt" = ground-truth görünürlük
 # (SADECE üst-sınır/sağlamlık ablasyonu, gerçek bir gözlem değil).
-OBS_MODES = ("latent", "latent+aux", "gt")
+OBS_MODES = ("latent", "latent+aux", "latent+aux+relo", "gt")  # +relo: + RELO takip özellikleri (v3 önbellek)
 AUX_FEATURE_DIM = 5  # ateşledi, tepe gücü, iz uzunluğu, son-30-kare ateşleme oranı, kayıtta
+RELO_FEATURE_DIM = 4  # takipte, RELO güveni, kutu w/100, kutu h/100 (takipte değilse 0)
 GT_FEATURE_DIM = 2   # görünür, kayıtta
 TRACK_MAX_JUMP_PX = 20.0  # bu kadar piksel içindeki ardışık tespitler aynı izdir
 TRACK_CAP = 30
@@ -343,7 +444,23 @@ def obs_feature_dim(obs_mode: str, latent_dim: int) -> int:
     """Kamera başına gözlem uzunluğu (ortamın ve politikanın 'latent_dim'i)."""
     if obs_mode not in OBS_MODES:
         raise ValueError(f"Bilinmeyen gözlem modu: {obs_mode!r} (seçenekler: {OBS_MODES})")
-    return {"latent": latent_dim, "latent+aux": latent_dim + AUX_FEATURE_DIM, "gt": GT_FEATURE_DIM}[obs_mode]
+    return {
+        "latent": latent_dim,
+        "latent+aux": latent_dim + AUX_FEATURE_DIM,
+        "latent+aux+relo": latent_dim + AUX_FEATURE_DIM + RELO_FEATURE_DIM,
+        "gt": GT_FEATURE_DIM,
+    }[obs_mode]
+
+
+def derive_relo_features(cache: SignalCache) -> np.ndarray:
+    """Kamera başına RELO özellikleri ``(n, kamera, RELO_FEATURE_DIM)``: [takipte,
+    güven, kutu w/100, kutu h/100]; RELO çıktısı olmayan karelerde 0. Hepsi o anki
+    karenin dedektör çıktısı (nedensel)."""
+    score = np.nan_to_num(cache.relo_score, nan=0.0)
+    box = np.nan_to_num(cache.relo_box_wh, nan=0.0) / 100.0
+    return np.concatenate(
+        [cache.relo_tracking.astype(np.float32)[..., None], score[..., None], box], axis=2
+    ).astype(np.float32)
 
 
 def derive_camera_features(cache: SignalCache) -> np.ndarray:
@@ -390,7 +507,11 @@ class CachedSignalProvider:
         self.encoder = encoder
         self.obs_mode = obs_mode
         self.latent_dim = obs_feature_dim(obs_mode, latent_dim)  # ortamın gördüğü kamera-başı uzunluk
-        self._aux = derive_camera_features(cache) if obs_mode == "latent+aux" else None
+        self._aux = None
+        if obs_mode in ("latent+aux", "latent+aux+relo"):
+            self._aux = derive_camera_features(cache)
+        if obs_mode == "latent+aux+relo":
+            self._aux = np.concatenate([self._aux, derive_relo_features(cache)], axis=2)
         self.latent_stats = latent_stats  # (ortalama, std): gözlemi standartlaştırır
         self.num_cameras = len(cache.cameras)
         self._ref_frame = cache.ref_start
@@ -834,6 +955,15 @@ def main(argv=None) -> None:
                        help="bu kameralarda dedektör eşiğini düşür (LOW_THRESHOLD_KWARGS)")
     build.add_argument("--parts-dir", help="kamera başına parçaların saklanacağı klasör; koşu kesilirse "
                                            "aynı komutla kaldığı yerden devam eder (--workers > 1 ile)")
+    build.add_argument("--detector", choices=["classic", "relo"], default="classic",
+                       help="classic: SmallTargetDetector; relo: klasik dedektör başlatır, RELO takip eder")
+    build.add_argument("--relo-root", help="klonlanmış RELO deposu (ağırlıklar indirilmiş)")
+    build.add_argument("--relo-variant", choices=["t256", "b256", "l256"], default="t256")
+    build.add_argument("--relo-init-box", type=float, default=ReloOptions.init_box_px)
+    build.add_argument("--relo-lost-threshold", type=float, default=ReloOptions.lost_threshold)
+    build.add_argument("--relo-lost-patience", type=int, default=ReloOptions.lost_patience)
+    build.add_argument("--relo-init-streak", type=int, default=ReloOptions.init_streak)
+    build.add_argument("--relo-min-box", type=float, default=ReloOptions.min_box_px)
 
     inspect = sub.add_parser("inspect-cache", help="Önbelleğin gözlem-kalitesi tanılarını yazdır")
     inspect.add_argument("cache")
@@ -876,19 +1006,28 @@ def main(argv=None) -> None:
 
     args = parser.parse_args(argv)
     if args.command == "build-cache":
+        relo_options = None
+        if args.detector == "relo":
+            if not args.relo_root:
+                parser.error("--detector relo için --relo-root gerekli")
+            relo_options = ReloOptions(
+                relo_root=args.relo_root, variant=args.relo_variant, init_box_px=args.relo_init_box,
+                lost_threshold=args.relo_lost_threshold, lost_patience=args.relo_lost_patience,
+                init_streak=args.relo_init_streak, min_box_px=args.relo_min_box,
+            )
         if args.workers > 1:
             cache = build_signal_cache_parallel(
                 args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
                 args.sync, args.workers, reference_camera=args.reference_camera, crop_size=args.crop_size,
                 parts_dir=args.parts_dir,
-                detector_kwargs=_low_threshold_map(args.low_threshold_cams),
+                detector_kwargs=_low_threshold_map(args.low_threshold_cams), relo_options=relo_options,
             )
         else:
             cache = build_signal_cache(
                 args.frames_root, args.detections_dir, args.cameras, args.ref_start, args.ref_end,
                 reference_camera=args.reference_camera, crop_size=args.crop_size,
                 log=lambda msg: print(msg, flush=True), sync_table=SYNC_TABLES[args.sync],
-                detector_kwargs=_low_threshold_map(args.low_threshold_cams),
+                detector_kwargs=_low_threshold_map(args.low_threshold_cams), **_detector_setup(relo_options),
             )
         cache.save(args.out)
         print(f"Kaydedildi: {args.out} ({Path(args.out).stat().st_size / 1e6:.1f} MB)", flush=True)

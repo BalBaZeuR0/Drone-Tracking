@@ -86,6 +86,10 @@ class SmallTargetDetector:
         self._previous_positions: List[Tuple[float, float]] = []
         self._static_counts: Dict[Tuple[int, int], int] = {}
         self._static_suppressed: Set[Tuple[int, int]] = set()
+        # Son karenin çalışma çözünürlüğündeki tepkisi ve ölçeği (ham px * ölçek = çalışma px);
+        # HybridReloDetector kırpımı RELO'nun bulduğu merkezden bu haritadan alır.
+        self.last_response: Optional[np.ndarray] = None
+        self.last_scale = 1.0
 
     def _cell(self, position: Tuple[float, float]) -> Tuple[int, int]:
         x, y = position
@@ -102,12 +106,15 @@ class SmallTargetDetector:
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
         dark_spots = cv2.morphologyEx(blurred, cv2.MORPH_BLACKHAT, self._kernel).astype(np.float32)
 
+        self.last_scale = scale
         if self._background is None:
             self._background = dark_spots.copy()
             self._frames_seen = 1
+            self.last_response = np.zeros_like(dark_spots)
             return self._no_detection()
 
         response = dark_spots - self._background
+        self.last_response = response
         self._background = (1.0 - self.background_rate) * self._background + self.background_rate * dark_spots
         self._frames_seen += 1
         if self._frames_seen <= self.warmup_frames:

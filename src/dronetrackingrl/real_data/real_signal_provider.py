@@ -19,6 +19,12 @@ def default_frame_reader(frames_root: Path, camera: int, frame_id: int) -> Optio
     return cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
 
 
+def color_frame_reader(frames_root: Path, camera: int, frame_id: int) -> Optional[np.ndarray]:
+    """BGR kare (RELO renkli görüntü ister; klasik dedektör kendisi griye çevirir)."""
+    path = Path(frames_root) / f"cam{camera}" / f"{frame_id:06d}.jpg"
+    return cv2.imread(str(path), cv2.IMREAD_COLOR)
+
+
 class RealCameraSignalProvider:
     """Gerçek çıkarılmış karelerden ve detections/camN.txt ground-truth'undan
     beslenen CameraSignalProvider implementasyonu.
@@ -68,6 +74,9 @@ class RealCameraSignalProvider:
             for camera in cameras
         }
         self._ref_frame = start_ref_frame
+        # Son karede kamera başına dedektör çıktısı (kayıtta değilse None); önbellek
+        # üretimi RELO alanlarını buradan okur.
+        self.last_mask_results: List[Optional[object]] = [None] * len(cameras)
 
     def reset(self) -> List[CameraStepSignal]:
         for detector in self._detectors.values():
@@ -83,7 +92,8 @@ class RealCameraSignalProvider:
 
     def signals_for_ref_frame(self, ref_frame: int) -> List[CameraStepSignal]:
         signals = []
-        for camera in self.cameras:
+        self.last_mask_results = [None] * len(self.cameras)
+        for index, camera in enumerate(self.cameras):
             camera_frame_id = round(mapped_frame(ref_frame, self.reference_camera, camera, self.sync_table))
             recording = is_recording(ref_frame, camera, self.reference_camera, self.sync_table)
             detector = self._detectors[camera]
@@ -100,6 +110,7 @@ class RealCameraSignalProvider:
 
             if recording and frame is not None:
                 mask_result = detector.update(frame)
+                self.last_mask_results[index] = mask_result
                 # `self.detections[camera]` (not `.get(camera, {})`): a camera
                 # entirely missing from `detections` is a caller wiring
                 # mistake and must raise loudly, not silently degrade to

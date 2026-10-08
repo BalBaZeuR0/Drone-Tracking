@@ -94,7 +94,7 @@ def test_provider_rejects_unknown_obs_mode():
         CachedSignalProvider(_cache([10]), None, LATENT_DIM, obs_mode="bogus")
 
 
-@pytest.mark.parametrize("obs_mode", ["latent+aux", "gt"])
+@pytest.mark.parametrize("obs_mode", ["latent+aux", "latent+aux+relo", "gt"])
 def test_run_experiment_supports_obs_modes(tmp_path, obs_mode):
     rng = np.random.default_rng(0)
     n, k = 40, 3
