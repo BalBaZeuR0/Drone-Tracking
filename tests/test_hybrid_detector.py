@@ -116,3 +116,39 @@ def test_reset_clears_state_and_resets_both_components():
     assert detector.tracking
     detector.reset()
     assert not detector.tracking and classic.index == -1
+
+
+def test_persistent_classic_track_far_from_relo_reanchors_the_tracker():
+    far = [(80.0, 80.0), (81.0, 80.0), (82.0, 80.0)]
+    classic = ScriptedClassic([(10.0, 10.0)] * 3 + far + [None])
+    tracker = ScriptedTracker([((11.0, 10.0), 0.99)] * 2 + [((83.0, 80.0), 0.99)])
+    detector = _detector(classic, tracker, reanchor_px=50.0)
+    results = [detector.update(FRAME) for _ in range(7)]
+    assert results[4].centroid == (11.0, 10.0)  # uzak iz henüz 2 kare: RELO'ya güven
+    assert len(tracker.inits) == 2 and tracker.inits[1] == (72.0, 70.0, 20.0, 20.0)  # 3. uzak karede yeniden çapa
+    assert results[5].centroid == (82.0, 80.0) and results[5].relo_tracking
+    assert results[6].centroid == (83.0, 80.0)  # yeni çapadan takip sürüyor
+
+
+def test_nearby_classic_detections_do_not_reanchor():
+    classic = ScriptedClassic([(10.0, 10.0)] * 6)
+    tracker = ScriptedTracker([((14.0, 10.0), 0.99)] * 3)
+    detector = _detector(classic, tracker, reanchor_px=50.0)
+    for _ in range(6):
+        detector.update(FRAME)
+    assert len(tracker.inits) == 1
+
+
+class BigBoxTracker(ScriptedTracker):
+    def track(self, frame):
+        self.index += 1
+        return (0.0, 0.0, 300.0, 200.0), 0.99
+
+
+def test_exploded_box_counts_as_lost_immediately():
+    classic = ScriptedClassic([(10.0, 10.0)] * 3 + [None])
+    tracker = BigBoxTracker([])
+    detector = _detector(classic, tracker, max_box_px=60.0)
+    results = [detector.update(FRAME) for _ in range(4)]
+    assert not results[3].relo_tracking and results[3].centroid is None  # klasiğin çıktısı
+    assert not detector.tracking

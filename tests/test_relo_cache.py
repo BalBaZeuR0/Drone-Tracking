@@ -121,4 +121,4 @@ def test_hybrid_factory_is_picklable_and_builds_a_hybrid_detector():
     assert isinstance(detector, HybridReloDetector)
     assert detector.init_box_px == 16.0 and detector.lost_patience == 4
     assert detector.classic.min_response == 8.0 and detector.crop_size == 32
-    assert options.tag() == "_relot256_b16_t0.2_p4_s3_m8"
+    assert options.tag() == "_relot256_b16_t0.2_p4_s3_m8_x60_r50"

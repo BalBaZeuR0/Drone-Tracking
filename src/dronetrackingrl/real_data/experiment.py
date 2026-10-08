@@ -334,10 +334,13 @@ class ReloOptions:
     lost_patience: int = 5
     init_streak: int = 3
     min_box_px: float = 8.0
+    max_box_px: float = 60.0
+    reanchor_px: float = 50.0
 
     def tag(self) -> str:
         return (f"_relo{self.variant}_b{self.init_box_px:g}_t{self.lost_threshold:g}"
-                f"_p{self.lost_patience}_s{self.init_streak}_m{self.min_box_px:g}")
+                f"_p{self.lost_patience}_s{self.init_streak}_m{self.min_box_px:g}"
+                f"_x{self.max_box_px:g}_r{self.reanchor_px:g}")
 
 
 class HybridDetectorFactory:
@@ -360,6 +363,7 @@ class HybridDetectorFactory:
             tracker_factory=partial(ReloTracker, o.relo_root, o.variant, o.min_box_px),
             init_streak=o.init_streak, init_box_px=o.init_box_px,
             lost_threshold=o.lost_threshold, lost_patience=o.lost_patience,
+            max_box_px=o.max_box_px, reanchor_px=o.reanchor_px,
             **classic_kwargs,
         )
 
@@ -964,6 +968,10 @@ def main(argv=None) -> None:
     build.add_argument("--relo-lost-patience", type=int, default=ReloOptions.lost_patience)
     build.add_argument("--relo-init-streak", type=int, default=ReloOptions.init_streak)
     build.add_argument("--relo-min-box", type=float, default=ReloOptions.min_box_px)
+    build.add_argument("--relo-max-box", type=float, default=ReloOptions.max_box_px,
+                       help="RELO kutusunun bir kenarı bunu aşarsa takip kaybedildi sayılır")
+    build.add_argument("--relo-reanchor", type=float, default=ReloOptions.reanchor_px,
+                       help="klasik dedektörün kalıcı izi RELO'dan bu kadar px uzaksa RELO yeniden başlatılır")
 
     inspect = sub.add_parser("inspect-cache", help="Önbelleğin gözlem-kalitesi tanılarını yazdır")
     inspect.add_argument("cache")
@@ -1014,6 +1022,7 @@ def main(argv=None) -> None:
                 relo_root=args.relo_root, variant=args.relo_variant, init_box_px=args.relo_init_box,
                 lost_threshold=args.relo_lost_threshold, lost_patience=args.relo_lost_patience,
                 init_streak=args.relo_init_streak, min_box_px=args.relo_min_box,
+                max_box_px=args.relo_max_box, reanchor_px=args.relo_reanchor,
             )
         if args.workers > 1:
             cache = build_signal_cache_parallel(
