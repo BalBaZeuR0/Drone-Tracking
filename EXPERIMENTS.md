@@ -241,6 +241,49 @@ yok" kavramı yok, drone kadrajdan çıkınca da yüksek güvenle bir şey bildi
 Doğru yerdeyken RELO tutarlı biçimde daha hassas (medyan hata 2–4 px → 1–2 px).
 
 
+## RELO hibrit dedektörle RL (2026-10-09, 3 tohum, 200k adım)
+Zincir: `scripts/relo_chain.sh` (5060 masaüstü). Önbellekler 1. kareden: `dataset3_relo.npz`,
+`dataset4_relo.npz` (RELO-T256, yeniden çapa 50 px, kutu sınırı 60 px). Ayarlar C_hist ile aynı
+(own-history, switch_penalty 0.1). Karşılaştırmalar aynı bölge, aynı ayar; sadece dedektör/gözlem farklı.
+
+**Dedektör, tüm veri seti (ikisi de 1. kareden, `results/gate_full_*.txt`):** ortalama hit
+ds3 0,828 → **0,875**, ds4 0,814 → **0,886** (ds4 cam0 0,333 → 0,613; ds3 cam0 0,560 → 0,691).
+Precision düşük: ds3 0,922 → 0,831, ds4 0,798 → 0,648 (RELO'nun "hedef yok" kavramı yok).
+
+**C bölünmesi — held-out bölgeler** (`C_fixed` = güncel klasik önbellek, latent+aux;
+`C_relo` = RELO önbelleği, latent+aux+relo; `C_relo_ozelliksiz` = RELO önbelleği, latent+aux):
+
+| Bölge | Sabit | Oracle | C_fixed | C_relo | C_relo_ozelliksiz |
+|---|---|---|---|---|---|
+| ds3 12001–14000 | 83,7 | 94,7 | 87,2 ± 0,1 | 87,4 ± 0,3 | 85,6 ± 0,9 |
+| ds3 28001–30000 | 65,8 | 100 | 98,9 ± 0,2 | 98,1 ± 0,7 | 98,1 ± 0,4 |
+| ds4 5001–10000 | 76,5 | 95,1 | 84,8 ± 0,5 | 84,6 ± 0,4 | 82,7 ± 1,5 |
+| ds4 16001–18000 | 90,2 | 100 | **97,7 ± 0,2** | 92,6 ± 3,8 | 95,0 ± 2,5 |
+
+→ Aynı-sahne held-out'ta **kazanç yok** (3 bölge eşit, ds4 16001–18000'de kayıp, tohum varyansı
+yüksek). Geçiş sayısı RELO'yla belirgin az (ör. 68 → 27, 17 → 9). Eğitim bölgelerinde RELO
+belirgin iyi (ds3 30201–33875: 71,6 → 88,5 / 98,3; ds4 1–4800: 78,1 → 83,6) — uyum, genelleme değil.
+
+**Fold B — held-out bölgeler** (`foldB_mix` = klasik, 2026-10-07; `foldB_relo` = RELO, latent+aux+relo).
+Fold B'nin held-out'u ağırlıkla "yeni sahne" problemiydi:
+
+| Bölge | Sabit | foldB_mix | foldB_relo | Fark |
+|---|---|---|---|---|
+| ds3 1–11800 | 100 | 99,0 ± 0,4 | 99,0 ± 0,2 | 0 |
+| ds4 1–4800 | 73,9 | 73,4 ± 0,1 | 74,8 ± 0,9 | +1,4 |
+| ds4 10201–15800 | 100 | 97,5 ± 0,8 | 99,1 ± 0,4 | +1,6 |
+| ds3 14200–27800 | 99,9 | 92,4 ± 0,4 | 96,3 ± 1,0 | +3,9 |
+| ds4 18201–26000 | 100 | 94,7 ± 0,2 | 96,7 ± 1,0 | +2,0 |
+| ds3 30201–33875 | 86,3 | 67,7 ± 1,7 | 79,1 ± 3,1 | **+11,4** |
+
+→ 6 held-out bölgenin 5'inde iyileşme, hiçbirinde kayıp; en kötü bölgedeki açık sabit kameraya
+göre −18,6'dan −7,2 puana indi. Hâlâ 3 bölgede sabit kameranın altında.
+
+**Yorum:** RELO dedektör düzeyinde net daha iyi; RL'de etkisi bölünmeye bağlı — fold B'de (yeni
+sahneye genelleme) tutarlı kazanç, C'de (aynı sahnenin görülmemiş bölümleri) kazanç yok.
+RELO özelliklerinin (güven/kutu/bayrak) katkısı belirsiz: C'de 2 bölgede +1,8/+1,9, 1 bölgede −2,4
+(varyans yüksek). Tek tohum seti ve iki bölünme; fold B kazancı için ikinci bir doğrulama gerekir.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.

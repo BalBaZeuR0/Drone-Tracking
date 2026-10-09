@@ -1,0 +1,21 @@
+aralık 1-33875; hit = etiketli karelerde <= 10 px tespit oranı; trk = RELO takipte oranı
+cam0                                   klasik  prec 0.985  rec 0.740  hit 0.560  hit20 0.563  medpx 2.478  trk 0.00
+cam0                        dataset3_relo.npz  prec 0.987  rec 0.956  hit 0.691  hit20 0.694  medpx 1.807  trk 0.91
+
+cam1                                   klasik  prec 0.872  rec 0.970  hit 0.966  hit20 0.967  medpx 2.870  trk 0.00
+cam1                        dataset3_relo.npz  prec 0.716  rec 0.986  hit 0.975  hit20 0.980  medpx 1.504  trk 0.66
+
+cam2                                   klasik  prec 0.929  rec 0.753  hit 0.662  hit20 0.701  medpx 4.381  trk 0.00
+cam2                        dataset3_relo.npz  prec 0.833  rec 0.821  hit 0.700  hit20 0.734  medpx 2.252  trk 0.57
+
+cam3                                   klasik  prec 0.917  rec 0.963  hit 0.950  hit20 0.950  medpx 1.921  trk 0.00
+cam3                        dataset3_relo.npz  prec 0.820  rec 0.990  hit 0.949  hit20 0.952  medpx 1.135  trk 0.54
+
+cam4                                   klasik  prec 0.950  rec 0.873  hit 0.872  hit20 0.872  medpx 2.148  trk 0.00
+cam4                        dataset3_relo.npz  prec 0.929  rec 0.957  hit 0.956  hit20 0.956  medpx 1.092  trk 0.70
+
+cam5                                   klasik  prec 0.879  rec 0.968  hit 0.956  hit20 0.957  medpx 2.536  trk 0.00
+cam5                        dataset3_relo.npz  prec 0.700  rec 1.000  hit 0.979  hit20 0.981  medpx 1.571  trk 0.65
+
+ORTALAMA                                   klasik  hit 0.828  hit20 0.835  prec 0.922
+ORTALAMA                        dataset3_relo.npz  hit 0.875  hit20 0.883  prec 0.831
