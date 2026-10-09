@@ -175,7 +175,7 @@ ve `results/ledger.csv`. Yeni sahnedeki her bölge için PPO − en iyi sabit ka
 dengesizliğiyle de karıştı; "işe yaramıyor" değil, "işe yaradığı güvenilir şekilde
 gösterilemedi". Aynı sahnede ajan güvenilir (8/8 kazanç), yeni sahnede tutarsız.
 
-## RELO hibrit dedektör — dedektör düzeyi kapı (2026-10-08) — ❌ kapı geçilmedi
+## RELO hibrit dedektör — dedektör düzeyi kapı (2026-10-08; 2026-10-09 düzeltildi) — adil karşılaştırmada karışık-olumlu
 Tasarım: `docs/superpowers/specs/2026-10-08-relo-hybrid-detector-design.md`.
 SmallTargetDetector drone'u bulur, RELO-T256 (ICML 2026, hazır ağırlık, ince ayar yok)
 takip eder. Ölçüm `scripts/relo_gate.py`: aynı aralıkta klasik önbellek dilimi vs RELO
@@ -212,6 +212,34 @@ sayılamaz, yeni bir doğrulama penceresi gerekir.
 
 **Karar:** spec'teki kapı ölçütü (dedektör düzeyinde klasikten daha iyi) sağlanmadı →
 RL koşuları başlatılmadı, kullanıcıya raporlandı.
+
+**⚠ DÜZELTME (2026-10-09): yukarıdaki "sabit nesneye kilitleniyor" teşhisi YANLIŞ, kapı karşılaştırması adil değildi.**
+Kare kare inceleme (`scripts/relo_lock_cause.py`): ds4 cam6'da RELO'nun (16, 382)'ye her
+gidişi bir *yeniden çapalama* anı — RELO o sırada drone'u 0–1 px hatayla, güven 1,0 ile
+takip ediyordu; hibritin içindeki klasik dedektör antende kalıcı iz verince kural RELO'yu
+antene taşıdı. Neden klasik antende? Karşılaştırma önbelleği (`dataset4_fixed`) 1. kareden
+üretilmişti, klasik dedektör anteni ~4600. karede bastırmayı öğrenmişti ("sıcak"); RELO
+önbellekleri ise pencere başından sıfırdan ("soğuk") başladı. Aynı pencerede soğuk başlayan
+klasik dedektör: antende 600 kare, cam6 hit 0,664 (RELO hibriti 0,668). Yani cam6 kaybı
+tamamen soğuk başlangıçtan.
+
+**Adil karşılaştırma (ikisi de soğuk başlangıç, `scripts/cold_gate.sh`), ortalama:**
+
+| Pencere | hit klasik → RELO | hit20 | precision |
+|---|---|---|---|
+| ds4 5001–7000 | 0,847 → **0,870** | 0,852 → 0,874 | 0,727 → 0,628 |
+| ds4 16001–18000 | 0,797 → **0,831** | 0,806 → 0,843 | 0,850 → 0,732 |
+| ds3 12001–14000 | **0,817** → 0,791 | 0,832 → 0,801 | 0,903 → 0,875 |
+| ds3 20001–21500 (ayar) | 0,811 → **0,842** | 0,832 → 0,895 | 0,970 → 0,936 |
+
+Ayar dışı 3 pencerenin 2'sinde RELO daha iyi (+2,3, +3,4), 1'inde kötü (−2,6; tek kamera:
+ds3 cam3 0,958→0,725, yalnızca 142 etiketli kare). cam6 artık eşit/daha iyi (0,664→0,668;
+0,891→0,915). **Gerçek kalan zayıflıklar:** (1) precision her yerde düşük — RELO'nun "hedef
+yok" kavramı yok, drone kadrajdan çıkınca da yüksek güvenle bir şey bildirmeye devam ediyor;
+(2) klasik dedektörün yanlış başlatmalarını devralıyor (ds3 cam0'da klasik zaten 0,27–0,35);
+(3) yeniden çapalama kuralı, klasik dedektör yanıldığında doğru takibi bozabiliyor.
+Doğru yerdeyken RELO tutarlı biçimde daha hassas (medyan hata 2–4 px → 1–2 px).
+
 
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
