@@ -284,6 +284,47 @@ sahneye genelleme) tutarlı kazanç, C'de (aynı sahnenin görülmemiş bölüml
 RELO özelliklerinin (güven/kutu/bayrak) katkısı belirsiz: C'de 2 bölgede +1,8/+1,9, 1 bölgede −2,4
 (varyans yüksek). Tek tohum seti ve iki bölünme; fold B kazancı için ikinci bir doğrulama gerekir.
 
+## RELO kazancının tekrarı (2026-10-10, 3 tohum, 200k adım) — kısmen tekrarlandı
+Zincir: `scripts/relo_replicate.sh` (5060). Ayarlar önceki RELO RL koşularıyla aynı (own-history,
+switch_penalty 0.1); önbellekler aynı (`dataset{3,4}_{fixed,relo}.npz`).
+
+**1) Fold B, yeni tohumlar 3/4/5** (`foldB_mix_s345` klasik, latent+aux; `foldB_relo_s345` RELO,
+latent+aux+relo). İlk tohum seti (0/1/2) yanında, 6 tohumun ortalaması sağda:
+
+| Bölge | Sabit | mix 0-2 | relo 0-2 | mix 3-5 | relo 3-5 | Fark 3-5 | Fark (6 tohum) |
+|---|---|---|---|---|---|---|---|
+| ds3 1–11800 | 100 | 99,0 | 99,0 | 99,0 ± 0,2 | 96,2 ± 4,7 | −2,8 | −1,4 |
+| ds4 1–4800 | 73,9 | 73,4 | 74,8 | 72,6 ± 1,6 | 73,4 ± 2,9 | +0,8 | +1,1 |
+| ds4 10201–15800 | 100 | 97,5 | 99,1 | 97,6 ± 0,8 | 98,6 ± 1,0 | +1,0 | +1,3 |
+| ds3 14200–27800 | 99,9 | 92,4 | 96,3 | 91,5 ± 1,0 | **95,1 ± 1,1** | **+3,6** | **+3,8** |
+| ds4 18201–26000 | 100 | 94,7 | 96,7 | 95,2 ± 0,2 | 93,6 ± 1,6 | −1,6 | +0,2 |
+| ds3 30201–33875 | 86,3 | 67,7 | 79,1 | 69,0 ± 0,3 | 69,7 ± 8,7 | +0,7 | +6,0 |
+
+→ İlk setteki **+11,4 tekrarlanmadı** (yeni tohumlar: 79,6 / 71,3 / 58,3, varyans çok yüksek).
+Tutarlı tek kazanç ds3 14200–27800 (+3,9 → +3,6). RELO koşularında bir tohum çökebiliyor:
+tohum 5 eğitim bölgesinde bile kötü (12001–14000: 77,8, klasik ~87) → bu genelleme değil,
+**optimizasyon kararsızlığı**.
+
+**2) Saf yeni sahne** (eğitimde hedef sahneden hiç kare yok):
+
+| Yön | Sabit | Eski (A2/B2, latent+aux, own-history yok) | X_fixed (klasik) | X_relo (RELO) | Tohumlar (relo) |
+|---|---|---|---|---|---|
+| ds3 → ds4 1–26000 | 87,8 | 87,9 | **91,2 ± 0,4** | 89,4 ± 4,6 | 92,4 / 82,9 / 92,9 |
+| ds4 1–26000 → ds3 | 94,1 | 94,4 | 92,5 ± 0,6 | **97,1 ± 0,6** | 96,5 / 96,9 / 97,9 |
+
+→ ds4→ds3'te RELO **net ve tutarlı** kazanç (+4,6, üç tohum da sabit kameranın üstünde; klasik
+sabit kameranın altında kalıyor). ds3→ds4'te iki tohum klasikten biraz iyi (+1,2/+1,7), biri çöktü
+(82,9) → ortalama eşit/altında. Not: own-history + geçiş cezasıyla klasik de ds3→ds4'te eski
+A2'den belirgin iyi (87,9 → 91,2), yani ayar değişikliği tek başına bu yönde kazanç sağladı.
+
+**Yorum:** RELO'nun RL'e katkısı gerçek ama ilk tahmin ettiğimizden küçük ve kararsız.
+Kazanç görülen yerler: ds4→ds3 saf yeni sahne (+4,6) ve ds3 14200–27800 (iki tohum setinde de
++3,6–3,9). Ana sorun RELO koşularında tek tohum çöküşleri (3 koşuda 1'er tohum). Olası nedenler
+(doğrulanmadı): RELO özelliklerinin dağılımı (güven çoğunlukla 1,0'a doymuş, kutu boyutu
+sahneye göre değişiyor) ya da RELO önbelleğinde precision düşüklüğü (drone yokken de çıktı) →
+gürültülü ödül sinyali. Sonraki adım: çöken tohumların (foldB_relo_s345 tohum 5,
+X_ds3_to_ds4_relo tohum 1) kamera izlerini incelemek; latent+aux (özelliksiz) RELO ile karşılaştırmak.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
