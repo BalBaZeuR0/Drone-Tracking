@@ -175,3 +175,7 @@ X_ds4_to_ds3_fixed,train,1,26000,25999,latent+aux,0.1,True,dataset4_fixed.npz,da
 X_ds4_to_ds3_fixed,eval,1,33875,33874,latent+aux,0.1,True,dataset4_fixed.npz,dataset3_fixed.npz,0.9968,0.6071,0.0014,0,0.9411,0.9252,0.0062,0.9293;0.9298;0.9164,182.0,3
 X_ds4_to_ds3_relo,train,1,26000,25999,latent+aux+relo,0.1,True,dataset4_relo.npz,dataset3_relo.npz,0.9906,0.5169,0.0017,0,0.8777,0.9368,0.0009,0.9373;0.9375;0.9356,185.0,3
 X_ds4_to_ds3_relo,eval,1,33875,33874,latent+aux+relo,0.1,True,dataset4_relo.npz,dataset3_relo.npz,0.9968,0.6071,0.0014,0,0.9411,0.971,0.006,0.9648;0.9691;0.9790,184.3,3
+X_ds3_to_ds4_relo_ozelliksiz,train,1,33875,33874,latent+aux,0.1,True,dataset3_relo.npz,dataset4_relo.npz,0.9968,0.6071,0.0014,0,0.9411,0.9824,0.0027,0.9790;0.9825;0.9857,194.3,3
+X_ds3_to_ds4_relo_ozelliksiz,eval,1,26000,25999,latent+aux,0.1,True,dataset3_relo.npz,dataset4_relo.npz,0.9906,0.5169,0.0017,0,0.8777,0.9123,0.0067,0.9213;0.9051;0.9107,263.0,3
+X_ds4_to_ds3_relo_ozelliksiz,train,1,26000,25999,latent+aux,0.1,True,dataset4_relo.npz,dataset3_relo.npz,0.9906,0.5169,0.0017,0,0.8777,0.9379,0.0015,0.9400;0.9368;0.9370,184.0,3
+X_ds4_to_ds3_relo_ozelliksiz,eval,1,33875,33874,latent+aux,0.1,True,dataset4_relo.npz,dataset3_relo.npz,0.9968,0.6071,0.0014,0,0.9411,0.9719,0.0093,0.9844;0.9689;0.9622,126.0,3

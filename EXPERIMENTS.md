@@ -325,6 +325,37 @@ sahneye göre değişiyor) ya da RELO önbelleğinde precision düşüklüğü (
 gürültülü ödül sinyali. Sonraki adım: çöken tohumların (foldB_relo_s345 tohum 5,
 X_ds3_to_ds4_relo tohum 1) kamera izlerini incelemek; latent+aux (özelliksiz) RELO ile karşılaştırmak.
 
+## Çöken tohumlar ve RELO özellik ablasyonu (2026-10-10) — kazanç konumdan, özellikler zararlı
+**Çöken tohumların incelemesi** (`scripts/relo_collapse.py`, izler `outputs/*/seed_*/trace_*.csv`):
+
+1. **foldB_relo_s345 tohum 5 — hayalet kameraya yapışma.** Fold B'de ds3 (6 kamera) ds4'e (7)
+   dolgulanıyor; tohum 5 dolgu kamerasını (-1) seçip uzun süre bırakmıyor: ds3 1–11800'de
+   1. kareden itibaren 1128 kare, eğitim bölgesinde 358, ds3 30201–33875'te 792 kare (her biri
+   tek kesintisiz bölüm). Bu sürenin %78–100'ünde başka bir kamerada drone görünür.
+   Own-history + geçiş cezası "kal" eğilimini güçlendiriyor; hayalete bir kez düşen ajan çıkamıyor.
+   RELO'ya özgü değil (klasik koşularda da hayalet payı %0–1,4 görülüyor) ama bir tohumu çökertebiliyor.
+   `pad_cameras` belgesindeki "hayalet seçmek öğrenmeyi bozmaz" varsayımı bu yüzden tam doğru değil.
+2. **X_ds3_to_ds4_relo tohum 1 — yanlış alarmlı kameralara güven.** Kaçırılan karelerin %98'inde
+   seçilen kamerada RELO takipte ve klasik ateşlemiş, ama drone orada yok. ds4'te drone
+   görünmezken RELO takipte oranı: cam6 %81, cam3 %69, cam1 %46, cam2 %45 (klasik ateşleme
+   oranları benzer: %82/%76/%51/%57). **RELO güveni bilgi taşımıyor:** hem isabet hem kaçırılan
+   karelerde medyan 1,00.
+
+**Ablasyon:** RELO önbelleği + latent+aux (güven/kutu/bayrak yok), `scripts/relo_ablation.sh`:
+
+| Yön | Sabit | Klasik | RELO + özellikler | RELO özelliksiz |
+|---|---|---|---|---|
+| ds3 → ds4 1–26000 | 87,8 | 91,2 ± 0,4 | 89,4 ± 4,6 (92,4/82,9/92,9) | 91,2 ± 0,7 (92,1/90,5/91,1) |
+| ds4 1–26000 → ds3 | 94,1 | 92,5 ± 0,6 | 97,1 ± 0,6 | **97,2 ± 0,9** (98,4/96,9/96,2) |
+
+→ ds4→ds3 kazancı (+4,7) özellikler olmadan da aynen duruyor: **kazanç RELO'nun konumundan**
+(daha iyi kırpım/izler), gözleme eklenen RELO özelliklerinden değil. ds3→ds4'te özellikler
+çıkarılınca çöküş kayboluyor (klasikle eşit). C bölünmesindeki `C_relo_ozelliksiz` sonucu da
+özelliklerin net katkısı olmadığını gösteriyordu. **Karar önerisi:** RELO önbelleği + latent+aux
+varsayılan olsun; `latent+aux+relo` bırakılsın (ya da güven yerine anlamlı bir sinyal bulunsun).
+Ayrı düzeltme önerisi: kayıtta olmayan kameraları (hayalet dahil; `recording` senkron tablosundan,
+nedensel) eylem olarak maskelemek.
+
 ## Bilinen sınırlamalar (henüz çözülmedi)
 - "Sabit kamera" test verisinden seçiliyor → ajana karşı iyimser bir ölçüt.
 - Tek sahne çifti (dataset3, dataset4), tek bölünme seti; güven aralığı yok.
