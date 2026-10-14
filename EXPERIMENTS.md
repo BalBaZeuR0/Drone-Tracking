@@ -87,14 +87,14 @@ bu değişiklikle ilgisi yok, ayrı bir konu.
 ajanın hangisini seçtiği (turuncu) aynı zaman ekseninde. Turuncu şeritlerin uzun ve
 kesintisiz olması, geçiş sayısının 28-118× azaldığını gözle doğruluyor.
 
-![Yörünge ve kamera seçimi](docs/figures/dataset3_dataset4_yorunge_ve_kamera_secimi.png)
+![Yörünge ve kamera seçimi](assets/kamera_secimi.png)
 
 **Ground-truth'a göre doğruluk** — 500 karelik kayan pencerede görünür oranı: PPO
 (turuncu) vs oracle/üst sınır (yeşil dolgu) vs sabit cam0 (lacivert), sadece gerçek
 etiketten. Gri bantlar eğitimde hiç görülmemiş test bölgeleri. dataset3'ün sonundaki
 (~30000-34000) zayıf bölge (bkz. TRAIN_EXTRA2 notu yukarıda) burada gözle görülüyor.
 
-![Ground-truth doğruluk karşılaştırması](docs/figures/ground_truth_dogruluk_karsilastirmasi.png)
+![Ground-truth doğruluk karşılaştırması](plots/ground_truth_dogruluk_karsilastirmasi.png)
 
 ## D3 — düzeltilmiş detektör (2026-10-05, 3 tohum)
 
@@ -142,8 +142,8 @@ ettik: 12001–14000 ve 28001–30000 (dataset3 kareleri bu amaçla ilk kez çı
 | 12001–14000 | **86,5 ± 0,1** | 85,0 ± 0,7 | 83,7 | 94,7 |
 | 28001–30000 | 99,4 ± 0,1 | 99,4 ± 0,3 | 65,8 | 100,0 |
 
-![Cam0 düşük eşik, dataset4 içi (aynı sahne)](docs/figures/cam0_esik_ds4_aynisahne.png)
-![Cam0 düşük eşik, dataset3'e geçiş (sahneler arası)](docs/figures/cam0_esik_ds3_capraz.png)
+![Cam0 düşük eşik, dataset4 içi (aynı sahne)](plots/cam0_esik_ds4_aynisahne.png)
+![Cam0 düşük eşik, dataset3'e geçiş (sahneler arası)](plots/cam0_esik_ds3_capraz.png)
 
 **Sonuç: genellemiyor.** 12001–14000'de düşük eşik aslında daha kötü (−1,5 puan,
 gürültü payının dışında). 28001–30000'de fark yok, ama oracle zaten 100 ve sabit

@@ -1,0 +1,161 @@
+{
+  "title": "DroneTrackingRL — veri ve karar akışı",
+  "nodes": {
+    "frames": {
+      "label": "6–7 sabit kamera\ndataset3 / dataset4\n(prepare extract)",
+      "pos": [
+        -0.6,
+        0
+      ],
+      "kind": "data",
+      "w": 2.6,
+      "h": 1.15
+    },
+    "det": {
+      "label": "SmallTargetDetector\narka plan çıkarma\n(+ isteğe bağlı RELO takip)",
+      "pos": [
+        3.5,
+        0
+      ],
+      "kind": "process",
+      "w": 2.8,
+      "h": 1.15
+    },
+    "cache": {
+      "label": "Önbellek (.npz)\nkırpım + dedektör izi",
+      "pos": [
+        7,
+        0
+      ],
+      "kind": "data",
+      "w": 2.6
+    },
+    "enc": {
+      "label": "Ortak otokodlayıcı\nkamera başına latent",
+      "pos": [
+        10.5,
+        0
+      ],
+      "kind": "model",
+      "w": 2.6
+    },
+    "obs": {
+      "label": "Gözlem (kamera başına)\nlatent + 5 nedensel özellik\n+ kendi geçmişi",
+      "pos": [
+        10.5,
+        2.3
+      ],
+      "kind": "process",
+      "w": 2.9,
+      "h": 1.15
+    },
+    "env": {
+      "label": "CameraSwitchEnv\neylem: N kameradan biri",
+      "pos": [
+        7,
+        2.3
+      ],
+      "kind": "process",
+      "w": 2.6
+    },
+    "ppo": {
+      "label": "PPO\nkameradan bağımsız\nortak politika",
+      "pos": [
+        2.6,
+        2.3
+      ],
+      "kind": "model",
+      "w": 2.6,
+      "h": 1.15
+    },
+    "labels": {
+      "label": "2D etiketler +\nsenkron tablosu",
+      "pos": [
+        7,
+        4.4
+      ],
+      "kind": "data",
+      "w": 2.6
+    },
+    "eval": {
+      "label": "Görünür oranı (%)\nvs Oracle · en iyi sabit\nkamera · rastgele",
+      "pos": [
+        2.6,
+        4.4
+      ],
+      "kind": "output",
+      "w": 2.8,
+      "h": 1.15
+    }
+  },
+  "edges": [
+    [
+      "frames",
+      "det"
+    ],
+    [
+      "det",
+      "cache"
+    ],
+    [
+      "cache",
+      "enc"
+    ],
+    [
+      "enc",
+      "obs"
+    ],
+    [
+      "obs",
+      "env"
+    ],
+    {
+      "from": "env",
+      "to": "ppo",
+      "label": "gözlem",
+      "rad": -0.3,
+      "label_offset": [
+        0,
+        0.32
+      ]
+    },
+    {
+      "from": "ppo",
+      "to": "env",
+      "label": "kamera seçimi",
+      "rad": -0.3,
+      "label_offset": [
+        0,
+        -0.32
+      ]
+    },
+    {
+      "from": "labels",
+      "to": "env",
+      "label": "ödül: görünür − 0,1 · geçiş"
+    },
+    {
+      "from": "ppo",
+      "to": "eval",
+      "label": "held-out bölgeler"
+    }
+  ],
+  "groups": [
+    {
+      "label": "build-cache (bir kez)",
+      "nodes": [
+        "det",
+        "cache"
+      ]
+    },
+    {
+      "label": "train (3 tohum, 200k adım)",
+      "nodes": [
+        "ppo",
+        "env",
+        "obs"
+      ],
+      "label_at": "top-right"
+    }
+  ]
+}
