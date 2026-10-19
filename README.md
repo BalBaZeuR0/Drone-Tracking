@@ -1,74 +1,76 @@
 # DroneTrackingRL
 
-**Farklı açılardan bakan sabit kameralar arasında, uçan drone'u o an en iyi gösteren kamerayı seçmeyi öğrenen bir pekiştirmeli öğrenme (PPO) ajanı.**
+**A reinforcement learning (PPO) agent that learns to pick, among fixed cameras looking from different angles, the one that currently shows a flying drone best.**
 
-Aynı drone'u 6–7 sabit yer kamerası izliyor. Drone kadrajdan çıktığında, bir engelin arkasına girdiğinde
-ya da çok küçük göründüğünde başka bir kameraya geçmek gerekiyor. Ajan her karede kamera başına çıkarılan
-özelliklere bakarak hangi kameraya geçeceğine karar veriyor. Hedef, drone'un ekranda görünür kaldığı
-süreyi en iyi sabit kameradan daha uzun tutmak. Bu ajan uçuş kontrolcüsü değil, bir "görüntü seçici".
-Veri: ETH Zürich [drone-tracking-datasets](https://github.com/CenekAlbl/drone-tracking-datasets) (dataset3: 6 kamera, dataset4: 7 kamera).
+The same drone is watched by 6–7 fixed ground cameras. When the drone leaves the frame, goes behind an
+obstacle or looks too small, the view has to switch to another camera. At every frame the agent looks at
+features extracted per camera and decides which camera to switch to. The goal is to keep the drone visible on
+screen for longer than the best fixed camera does. The agent is a "view selector", not a flight controller.
+Data: ETH Zürich [drone-tracking-datasets](https://github.com/CenekAlbl/drone-tracking-datasets) (dataset3: 6 cameras, dataset4: 7 cameras).
 
-![Yörünge ve kamera seçimi](assets/kamera_secimi.png)
+![Trajectory and camera selection](assets/camera_selection.png)
 
-*Solda drone'un cam0'daki gerçek 2D yörüngesi; sağda hangi kameraların drone'u gördüğü (gri) ve C_hist ajanının seçtiği kamera (turuncu), dataset3 ve dataset4, tohum 0.*
+*Left: the drone's ground-truth 2D trajectory in cam0. Right: which cameras saw the drone (grey) and the camera chosen by the C_hist agent (orange), dataset3 and dataset4, seed 0.*
 
-## Özet
+## Overview
 
 | | |
 |---|---|
-| **Problem** | Çok kameralı sahnede drone'u kaybetmeden, gereksiz sık geçiş yapmadan doğru kameraya geçmek. Ölçüt: **görünür oranı**, yani ajanın seçtiği kamerada drone'un o karede gerçekten görünme yüzdesi. |
-| **Yöntem** | Arka plan çıkarmaya dayalı küçük hedef dedektörü (isteğe bağlı RELO-T256 takipçisiyle hibrit), ortak otokodlayıcı ile kamera başına latent, 5 nedensel dedektör özelliği ve ajanın kendi geçmişi. Gymnasium ortamında kameradan bağımsız ortak PPO politikası. Ödül: görünürlük − 0,1 × kamera geçişi. Kıyaslar: Oracle, en iyi sabit kamera, rastgele. |
-| **Simülasyon / donanım** | Simülasyon yok, gerçek çok kameralı video. Eğitim CPU'da yapıldı (PyTorch + Stable-Baselines3; Windows 11 ve Ubuntu). Koşu başına 3 tohum × 200k adım (C_hist ~40 dk). RELO önbelleği RTX 5060 GPU'da üretildi. |
-| **Makale** | Hazırlanıyor (henüz yazılmadı). |
+| **Problem** | Switching to the right camera in a multi-camera scene without losing the drone and without switching needlessly often. Metric: **visible rate**, the percentage of frames in which the drone is actually visible in the camera the agent picked. |
+| **Method** | Small-target detector based on background subtraction (optionally hybrid with the RELO-T256 tracker), a per-camera latent from a shared autoencoder, 5 causal detector features and the agent's own history. A camera-agnostic shared PPO policy in a Gymnasium environment. Reward: visibility − 0.1 × camera switch. Baselines: Oracle, best fixed camera, random. |
+| **Simulation / hardware** | No simulation; real multi-camera video. Training ran on CPU (PyTorch + Stable-Baselines3; Windows 11 and Ubuntu). 3 seeds × 200k steps per run (C_hist ~40 min). The RELO cache was produced on an RTX 5060 GPU. |
+| **Paper** | In preparation (not yet written). |
 
-### Sistem mimarisi
+### System architecture
 
-![Veri ve karar akışı](assets/architecture.png)
+![Data and decision flow](assets/architecture.png)
 
-Video kareleri bir kez işlenip küçük bir `.npz` önbelleğe yazılır. Eğitim yalnızca bu önbellekten çalıştığı
-için deneyler hızlı tekrarlanır. Politika kameradan bağımsızdır, yani her kamera aynı ağdan geçer. Bu sayede
-6 kameralı sahnede eğitilen ajan 7 kameralı sahnede de çalışabilir.
+Video frames are processed once and written to a small `.npz` cache. Training runs only from this cache, so
+experiments repeat quickly. The policy is camera-agnostic, meaning every camera goes through the same network.
+This lets an agent trained on the 6-camera scene also run on the 7-camera scene.
 
-## Seçilmiş sonuçlar
+## Selected results
 
-### Sonuç 1: Aynı sahnenin görülmemiş bölgelerinde ajan sabit kamerayı geçiyor
+### Result 1: On unseen segments of the same scenes the agent beats the fixed camera
 
-Eğitimde hiç kullanılmamış 4 bölgenin hepsinde PPO en iyi sabit kameranın üstünde (+2,6 ile +33,6 puan arası).
-Kamera değiştirmenin gerçekten önemli olduğu ds3 28001–30000 bölgesinde sabit kamera %65,8'de kalırken ajan
-oracle'a ulaşıyor (%99,4). Not: "en iyi sabit kamera" test verisine bakılarak seçildiği için ajana karşı iyimser bir ölçüttür.
+In all 4 segments never used in training, PPO is above the best fixed camera (by +2.6 to +33.6 points). In the
+ds3 28001–30000 segment, where switching cameras really matters, the fixed camera stays at 65.8% while the agent
+reaches the oracle (99.4%). Note: the "best fixed camera" is picked by looking at the test data, so it is an
+optimistic baseline against the agent.
 
-![Aynı sahne, held-out bölgeler](plots/ayni_sahne_heldout.png)
+![Same scenes, held-out segments](plots/same_scene_heldout.png)
 
-### Sonuç 2: Kendi geçmişi ve geçiş cezası, kamera değiştirme sayısını 28–118 kat azaltıyor
+### Result 2: Own history and a switch penalty cut camera switches by 28–118×
 
-Önceki ajan neredeyse her 3–5 karede bir kamera değiştiriyordu; dedektörün kare kare titremesine tepki
-veriyordu. Gözleme "az önce hangi kameradaydım, kaç adımdır oradayım" bilgisi ve küçük bir geçiş cezası
-eklenince ajan artık ~150–380 karede bir değiştiriyor. Doğruluk aynı kaldı ya da arttı (ds4 16001–18000: 94,8 → 98,3).
-Aşağıdaki eğri, oracle ve sabit cam0 ile karşılaştırmalı kayan pencere görünür oranını gösteriyor.
+The previous agent switched cameras almost every 3–5 frames, reacting to the detector's frame-to-frame jitter.
+Adding "which camera was I just on, and for how many steps" to the observation plus a small switch penalty makes
+the agent switch only every ~150–380 frames. Accuracy stayed the same or improved (ds4 16001–18000: 94.8 → 98.3).
+The curve below shows the rolling-window visible rate compared with the oracle and the fixed cam0.
 
-![Görünür oranı zaman içinde](plots/ground_truth_dogruluk_karsilastirmasi.png)
+![Visible rate over time](plots/visible_rate_over_time.png)
 
-### Sonuç 3: Yeni sahneye aktarım tutarsız; RELO dedektörü bir yönde net kazanç sağlıyor
+### Result 3: Transfer to a new scene is inconsistent; the RELO detector gives a clear gain in one direction
 
-Hedef sahneden eğitimde hiç kare yokken klasik dedektörle ds3 → ds4 yönünde +3,4 puan kazanç var, ds4 → ds3
-yönünde ise ajan sabit kameranın altında kalıyor (−1,6). RELO-T256 takipçisiyle üretilen önbellek ds4 → ds3
-yönünü +3,1'e çeviriyor. Ablasyona göre bu kazanç RELO'nun daha iyi konum bulmasından geliyor, gözleme eklenen
-RELO özelliklerinden değil. Karışık (iki sahne birlikte) eğitimin ilk bölünmedeki kazancı ikinci bir bölünmede
-tekrarlanmadı (Fold B). Ayrıntılar, başarısız denemeler dahil: [EXPERIMENTS.md](EXPERIMENTS.md).
+With no target-scene frames in training, the classical detector gains +3.4 points in the ds3 → ds4 direction,
+while in the ds4 → ds3 direction the agent stays below the fixed camera (−1.6). A cache built with the
+RELO-T256 tracker turns ds4 → ds3 into +3.1. The ablation shows this gain comes from RELO locating the drone
+better, not from the RELO features added to the observation. The gain of mixed (both scenes together) training
+on the first split did not replicate on a second split (Fold B). Details, including failed attempts:
+[EXPERIMENTS.md](EXPERIMENTS.md) (in Turkish).
 
-![Yeni sahneye aktarım](plots/yeni_sahne.png)
+![Transfer to a new scene](plots/new_scene.png)
 
-*Tüm şekiller `plots/` klasöründe; sayıların kaynağı `results/*/results.json` ve `summary.txt`.*
+*All figures are in `plots/`; the numbers come from `results/*/results.json` and `summary.txt`.*
 
-## Kurulum
+## Installation
 
-### Gereksinimler
+### Requirements
 
-- Windows 10/11 veya Linux, Python ≥ 3.10 (3.12 ile test edildi)
-- RAM ≥ 8 GB (eğitim ~5–6 GB). Eğitim için GPU gerekmez; RELO önbelleğini üretmek için CUDA'lı GPU gerekir.
-- ~65 GB boş disk (dataset3 kareleri ~24 GB, dataset4 ~30 GB)
+- Windows 10/11 or Linux, Python ≥ 3.10 (tested with 3.12)
+- RAM ≥ 8 GB (training uses ~5–6 GB). No GPU needed for training; producing the RELO cache needs a CUDA GPU.
+- ~65 GB free disk (dataset3 frames ~24 GB, dataset4 ~30 GB)
 
-### Adımlar
+### Steps
 
 ```bash
 git clone https://github.com/BalBaZeuR0/Drone-Tracking.git
@@ -76,20 +78,20 @@ cd Drone-Tracking
 python -m venv .venv && source .venv/bin/activate      # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements-lock.txt
 pip install -e ".[dev,plots]"
-python -m pytest -q                                     # kurulum kontrolü
+python -m pytest -q                                     # installation check
 ```
 
-Beklenen çıktı:
+Expected output:
 
 ```
 109 passed, 1 skipped in 75.98s (0:01:15)
 ```
 
-Veri hazırlığı (kare çıkarma, önbellek üretme, kontrol) adım adım [RUN_ON_OTHER_PC.md](RUN_ON_OTHER_PC.md) dosyasında anlatılıyor.
+Data preparation (frame extraction, cache building, checks) is described step by step in [RUN_ON_OTHER_PC.md](RUN_ON_OTHER_PC.md) (in Turkish).
 
-## Kullanım
+## Usage
 
-### Kareleri çıkar, önbellek üret, kontrol et
+### Extract frames, build the cache, check it
 
 ```bash
 python -m dronetrackingrl.real_data.prepare extract --dataset-dir DATA/dataset3 --frames-dir WORK/dataset3_frames --work-dir WORK/tmp --workers 3
@@ -99,7 +101,7 @@ python -m dronetrackingrl.real_data.experiment build-cache --sync dataset3 --wor
 python -m dronetrackingrl.real_data.experiment inspect-cache caches/dataset3_full.npz
 ```
 
-### C_hist ajanını eğit (karışık eğitim + kendi geçmişi + geçiş cezası)
+### Train the C_hist agent (mixed training + own history + switch penalty)
 
 ```bash
 python -m dronetrackingrl.real_data.experiment train \
@@ -112,7 +114,8 @@ python -m dronetrackingrl.real_data.experiment train \
     --timesteps 200000 --seeds 0 1 2 --encoder-epochs 5 --out-dir outputs/C_hist
 ```
 
-Beklenen çıktı (`outputs/C_hist/summary.txt`, ilk held-out bölge):
+Expected output (`outputs/C_hist/summary.txt`, first held-out segment; the CLI writes its summary in Turkish:
+oracle visible rate, random, best fixed camera, PPO with 3 seeds):
 
 ```
 === EVAL (ref_frame 12001..14000, 1999 adım) ===
@@ -122,53 +125,53 @@ Beklenen çıktı (`outputs/C_hist/summary.txt`, ilk held-out bölge):
   PPO (3 seed)                        : 0.8629 ± 0.0154   (seed başına: 0.8769, 0.8704, 0.8414)
 ```
 
-Önceki tüm koşuların özetleri `results/<koşu>/summary.txt` dosyalarında, deney defteri `results/ledger.csv` dosyasında.
+Summaries of all earlier runs are in `results/<run>/summary.txt`, and the experiment ledger is `results/ledger.csv`.
 
-## Sonuçları yeniden üretme
+## Reproducing the results
 
-| Şekil | Komut |
+| Figure | Command |
 |---|---|
-| `plots/ayni_sahne_heldout.png`, `plots/yeni_sahne.png` | `python scripts/plot_readme.py` (kayıtlı `results/` dosyalarından) |
-| `assets/kamera_secimi.png`, `plots/ground_truth_dogruluk_karsilastirmasi.png` | C_hist koşusunun adım adım iz dosyalarından (`outputs/C_hist/seed_0/trace_*.csv`) üretildi |
-| `results/C_hist/*` | Yukarıdaki "C_hist ajanını eğit" komutu |
-| `results/X_ds4_to_ds3_relo_ozelliksiz/*` | `bash scripts/relo_ablation.sh` (RELO önbelleği gerekir) |
+| `plots/same_scene_heldout.png`, `plots/new_scene.png` | `python scripts/plot_readme.py` (from the saved `results/` files) |
+| `assets/camera_selection.png`, `plots/visible_rate_over_time.png` | `python scripts/plot_traces.py --trace-dir outputs/C_hist/seed_0 --data-dir DATA` (from the C_hist run's per-step trace files) |
+| `results/C_hist/*` | The "Train the C_hist agent" command above |
+| `results/X_ds4_to_ds3_relo_ozelliksiz/*` | `bash scripts/relo_ablation.sh` (needs the RELO cache) |
 | `assets/architecture.png` | `python scripts/flowchart.py assets/architecture.json` |
 
-## Proje yapısı
+## Project structure
 
 ```
 Drone-Tracking/
-├── assets/              # README görselleri (kamera_secimi.png, architecture.png + .json kaynağı)
-├── caches/              # .npz önbellekler (git'e alınmaz, yeniden üretilebilir)
-├── docs/                # tasarım belgeleri ve uygulama planları
-├── plots/               # sonuç grafikleri
-├── results/             # her deneyin results.json + summary.txt kaydı, ledger.csv
-├── scripts/             # RELO zincirleri, teşhis betikleri, plot_readme.py, flowchart.py
+├── assets/              # README images (camera_selection.png, architecture.png + .json source)
+├── caches/              # .npz caches (not committed, reproducible)
+├── docs/                # design documents and implementation plans
+├── plots/               # result figures
+├── results/             # results.json + summary.txt of every experiment, ledger.csv
+├── scripts/             # RELO chains, diagnostic scripts, plot_readme.py, plot_traces.py, flowchart.py
 ├── src/dronetrackingrl/
-│   ├── masking/         # SmallTargetDetector, RELO hibrit takipçi
-│   ├── encoder/         # ortak otokodlayıcı
+│   ├── masking/         # SmallTargetDetector, RELO hybrid tracker
+│   ├── encoder/         # shared autoencoder
 │   ├── rl_env/          # CameraSwitchEnv (Gymnasium)
-│   ├── baselines/       # Oracle / sabit kamera / rastgele
-│   ├── real_data/       # kare çıkarma, senkron, önbellek, eğitim CLI'ı
-│   └── evaluation/      # görünür oranı ve kayıt
-├── tests/               # 110 test (+ küçük kare örnekleri)
-├── EXPERIMENTS.md       # tüm deneyler, başarısızlar dahil
-├── RUN_ON_OTHER_PC.md   # başka makinede adım adım kurulum ve eğitim
+│   ├── baselines/       # Oracle / fixed camera / random
+│   ├── real_data/       # frame extraction, sync, cache, training CLI
+│   └── evaluation/      # visible rate and logging
+├── tests/               # 110 tests (+ small frame samples)
+├── EXPERIMENTS.md       # every experiment, failed ones included (in Turkish)
+├── RUN_ON_OTHER_PC.md   # step-by-step setup and training on another machine (in Turkish)
 ├── pyproject.toml
 └── README.md
 ```
 
-## Atıf, lisans, iletişim
+## Citation, license, contact
 
 ```bibtex
 @misc{dronetrackingrl2026,
-  title  = {DroneTrackingRL: Çok kameralı drone takibi için pekiştirmeli öğrenmeyle kamera seçimi},
+  title  = {DroneTrackingRL: Camera selection with reinforcement learning for multi-camera drone tracking},
   author = {Öztürk, Emir},
   year   = {2026},
   howpublished = {\url{https://github.com/BalBaZeuR0/Drone-Tracking}}
 }
 ```
 
-Veri: [CenekAlbl/drone-tracking-datasets](https://github.com/CenekAlbl/drone-tracking-datasets). Eğitim izleme: [rlpanel](https://github.com/BalBaZeuR0/RLpanel).
-Lisans dosyası henüz eklenmedi, kullanım için iletişime geçin.
-İletişim: [@BalBaZeuR0](https://github.com/BalBaZeuR0), MTA Yapay Zeka Merkezi.
+Data: [CenekAlbl/drone-tracking-datasets](https://github.com/CenekAlbl/drone-tracking-datasets). Training monitoring: [rlpanel](https://github.com/BalBaZeuR0/RLpanel).
+No license file has been added yet; please get in touch before reusing the code.
+Contact: [@BalBaZeuR0](https://github.com/BalBaZeuR0), MTA Artificial Intelligence Center.

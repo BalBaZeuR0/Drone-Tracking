@@ -1,8 +1,9 @@
 {
-  "title": "DroneTrackingRL — veri ve karar akışı",
+  "title": "DroneTrackingRL — data and decision flow",
+  "lang": "en",
   "nodes": {
     "frames": {
-      "label": "6–7 sabit kamera\ndataset3 / dataset4\n(prepare extract)",
+      "label": "6–7 fixed cameras\ndataset3 / dataset4\n(prepare extract)",
       "pos": [
         -0.6,
         0
@@ -12,7 +13,7 @@
       "h": 1.15
     },
     "det": {
-      "label": "SmallTargetDetector\narka plan çıkarma\n(+ isteğe bağlı RELO takip)",
+      "label": "SmallTargetDetector\nbackground subtraction\n(+ optional RELO tracker)",
       "pos": [
         3.5,
         0
@@ -22,7 +23,7 @@
       "h": 1.15
     },
     "cache": {
-      "label": "Önbellek (.npz)\nkırpım + dedektör izi",
+      "label": "Cache (.npz)\ncrops + detector trace",
       "pos": [
         7,
         0
@@ -31,7 +32,7 @@
       "w": 2.6
     },
     "enc": {
-      "label": "Ortak otokodlayıcı\nkamera başına latent",
+      "label": "Shared autoencoder\nper-camera latent",
       "pos": [
         10.5,
         0
@@ -40,7 +41,7 @@
       "w": 2.6
     },
     "obs": {
-      "label": "Gözlem (kamera başına)\nlatent + 5 nedensel özellik\n+ kendi geçmişi",
+      "label": "Observation (per camera)\nlatent + 5 causal features\n+ own history",
       "pos": [
         10.5,
         2.3
@@ -50,7 +51,7 @@
       "h": 1.15
     },
     "env": {
-      "label": "CameraSwitchEnv\neylem: N kameradan biri",
+      "label": "CameraSwitchEnv\naction: one of N cameras",
       "pos": [
         7,
         2.3
@@ -59,7 +60,7 @@
       "w": 2.6
     },
     "ppo": {
-      "label": "PPO\nkameradan bağımsız\nortak politika",
+      "label": "PPO\ncamera-agnostic\nshared policy",
       "pos": [
         2.6,
         2.3
@@ -69,7 +70,7 @@
       "h": 1.15
     },
     "labels": {
-      "label": "2D etiketler +\nsenkron tablosu",
+      "label": "2D labels +\nsync table",
       "pos": [
         7,
         4.4
@@ -78,7 +79,7 @@
       "w": 2.6
     },
     "eval": {
-      "label": "Görünür oranı (%)\nvs Oracle · en iyi sabit\nkamera · rastgele",
+      "label": "Visible rate (%)\nvs Oracle · best fixed\ncamera · random",
       "pos": [
         2.6,
         4.4
@@ -112,7 +113,7 @@
     {
       "from": "env",
       "to": "ppo",
-      "label": "gözlem",
+      "label": "observation",
       "rad": -0.3,
       "label_offset": [
         0,
@@ -122,7 +123,7 @@
     {
       "from": "ppo",
       "to": "env",
-      "label": "kamera seçimi",
+      "label": "camera choice",
       "rad": -0.3,
       "label_offset": [
         0,
@@ -132,24 +133,24 @@
     {
       "from": "labels",
       "to": "env",
-      "label": "ödül: görünür − 0,1 · geçiş"
+      "label": "reward: visible − 0.1 · switch"
     },
     {
       "from": "ppo",
       "to": "eval",
-      "label": "held-out bölgeler"
+      "label": "held-out segments"
     }
   ],
   "groups": [
     {
-      "label": "build-cache (bir kez)",
+      "label": "build-cache (once)",
       "nodes": [
         "det",
         "cache"
       ]
     },
     {
-      "label": "train (3 tohum, 200k adım)",
+      "label": "train (3 seeds, 200k steps)",
       "nodes": [
         "ppo",
         "env",

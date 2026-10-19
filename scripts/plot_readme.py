@@ -1,6 +1,6 @@
-"""README sonuç grafikleri — kayıtlı results/*/results.json dosyalarından (yeniden eğitim yok).
+"""README result figures, drawn from the saved results/*/results.json files (no retraining).
 
-    python scripts/plot_readme.py            # -> plots/ayni_sahne_heldout.png, plots/yeni_sahne.png
+    python scripts/plot_readme.py            # -> plots/same_scene_heldout.png, plots/new_scene.png
 """
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 
 ROOT = Path(__file__).resolve().parents[1]
 FIXED, ORACLE, INK, MUTED, GRID = "#9a9a94", "#2b2b28", "#2b2b28", "#6b6b66", "#e6e5e0"
-SERIES = {"PPO (klasik dedektör)": "#2a78d6", "PPO (RELO dedektör)": "#eb6834"}
+SERIES = {"PPO (classical detector)": "#2a78d6", "PPO (RELO detector)": "#eb6834"}
 
 
 def load(run: str) -> dict:
@@ -45,7 +45,7 @@ def dot_plot(rows: list[dict], series: list[str], title: str, out: Path) -> None
             ax.text(max(s["seeds"] + [r["oracle"]]) + 0.8, yy, f"{s['mean']:.1f}  ({d:+.1f})", va="center",
                     fontsize=8.5, color=INK)
     ax.set_yticks(range(len(rows)), [r["region"] for r in reversed(rows)], fontsize=9.5, color=INK)
-    ax.set_xlabel("Görünür oranı (%) — ajanın seçtiği kamerada drone görünüyor mu", fontsize=9, color=MUTED)
+    ax.set_xlabel("Visible rate (%): is the drone visible in the camera the agent picked?", fontsize=9, color=MUTED)
     lo = min(min(r["fixed"], *(min(r[s]["seeds"]) for s in series)) for r in rows)
     ax.set_xlim(max(0, lo - 4), 110)
     ax.set_xticks([t for t in ax.get_xticks() if max(0, lo - 4) <= t <= 100])
@@ -57,13 +57,13 @@ def dot_plot(rows: list[dict], series: list[str], title: str, out: Path) -> None
     ax.spines["bottom"].set_color("#c9c8c2")
     ax.tick_params(axis="x", colors=MUTED, labelsize=8.5)
     ax.tick_params(axis="y", length=0)
-    handles = [plt.Line2D([], [], ls="", marker="o", ms=8, color=FIXED, label="En iyi sabit kamera"),
-               *[plt.Line2D([], [], ls="", marker="o", ms=8, color=SERIES[s], label=f"{s}, 3 tohum") for s in series],
-               plt.Line2D([], [], ls="", marker="|", ms=12, mew=2.5, color=ORACLE, label="Oracle (üst sınır)")]
+    handles = [plt.Line2D([], [], ls="", marker="o", ms=8, color=FIXED, label="Best fixed camera"),
+               *[plt.Line2D([], [], ls="", marker="o", ms=8, color=SERIES[s], label=f"{s}, 3 seeds") for s in series],
+               plt.Line2D([], [], ls="", marker="|", ms=12, mew=2.5, color=ORACLE, label="Oracle (upper bound)")]
     ax.legend(handles=handles, loc="lower center", bbox_to_anchor=(0.5, 1.0), ncol=len(handles) if len(handles) <= 3 else 2, frameon=False,
               fontsize=8.5, handletextpad=0.3, columnspacing=1.2)
     ax.set_title(title, fontsize=11.5, color=INK, loc="left", pad=28 if len(handles) <= 3 else 44)
-    fig.text(0.01, 0.005, "Nokta: tohum ortalaması · çizgi: tohum aralığı · parantez: sabit kameraya göre fark (puan)",
+    fig.text(0.01, 0.005, "Dot: seed mean · line: seed range · in brackets: difference from the fixed camera (points)",
              fontsize=7.5, color=MUTED)
     fig.tight_layout()
     fig.savefig(out, facecolor="white")
@@ -78,20 +78,20 @@ def main() -> None:
     rows = []
     for split in ("eval", "eval_extra1", "eval_extra2", "eval_extra3"):
         r = split_row(c, split)
-        r["PPO (klasik dedektör)"] = {"mean": r["mean"], "seeds": r["seeds"]}
+        r["PPO (classical detector)"] = {"mean": r["mean"], "seeds": r["seeds"]}
         rows.append(r)
-    dot_plot(rows, ["PPO (klasik dedektör)"],
-             "Aynı sahnenin eğitimde görülmemiş bölgeleri (C_hist: karışık eğitim + kendi geçmişi)",
-             out / "ayni_sahne_heldout.png")
+    dot_plot(rows, ["PPO (classical detector)"],
+             "Held-out segments of the training scenes (C_hist: mixed training + own history)",
+             out / "same_scene_heldout.png")
 
     rows = []
     for direction, label in (("ds3_to_ds4", "ds3 → ds4"), ("ds4_to_ds3", "ds4 → ds3")):
         k, rl = split_row(load(f"X_{direction}_fixed"), "eval"), split_row(load(f"X_{direction}_relo_ozelliksiz"), "eval")
         rows.append({"region": f"{label}\n(test: {k['region']})", "fixed": k["fixed"], "oracle": k["oracle"],
-                     "PPO (klasik dedektör)": {"mean": k["mean"], "seeds": k["seeds"]},
-                     "PPO (RELO dedektör)": {"mean": rl["mean"], "seeds": rl["seeds"]}})
-    dot_plot(rows, list(SERIES), "Hiç görülmemiş sahneye aktarım (hedef sahneden eğitimde hiç kare yok)",
-             out / "yeni_sahne.png")
+                     "PPO (classical detector)": {"mean": k["mean"], "seeds": k["seeds"]},
+                     "PPO (RELO detector)": {"mean": rl["mean"], "seeds": rl["seeds"]}})
+    dot_plot(rows, list(SERIES), "Transfer to an unseen scene (no target-scene frames in training)",
+             out / "new_scene.png")
 
 
 if __name__ == "__main__":
